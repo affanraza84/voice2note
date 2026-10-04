@@ -12,7 +12,7 @@ import { chunkTranscriptAndMetadata } from '@/lib/rag/chunking';
 import { getEmbeddingProvider } from '@/lib/ai/embeddings/provider';
 import crypto from 'crypto';
 
-describe('Phase 3 Evaluation Suite: Intelligence Extraction & Grounded RAG', () => {
+describe('Evaluation Suite: Intelligence Extraction & Grounded RAG', () => {
   const note1Id = `eval-note-1-${Date.now()}`;
   const note2Id = `eval-note-2-${Date.now()}`;
 

@@ -170,7 +170,7 @@ Voice2Note deals with intimate personal speech. Using open-source, local AI prov
 - Dedicated `/privacy` page detailing zero-cloud architecture and air-gap verification steps.
 - Clear model licensing disclosures and local AI daemon diagnostics.
 
-### 7. Hackathon Demo Dataset & Demo Mode
+### 7. Instant Demo Dataset & Demo Mode
 - Instant 1-click loading of 6 realistic cross-domain demo voice notes (engineering, SaaS pricing, fitness, home renovation).
 - Clear visual `Demo Data` indicators to preserve user data boundaries.
 
@@ -285,15 +285,15 @@ npx vitest run
 
 ---
 
-## Demo
+## Interactive Demo
+ 
+Want to test Voice2Note without recording your own voice first?
 
-Want to try Voice2Note without speaking into the microphone first?
-
-1. Go to **Settings** (`/settings`).
-2. Click **"Load 6 Demo Notes"** under Hackathon Demo Dataset.
+1. Open **Settings** (`/settings`) in your browser.
+2. Click **"Load 6 Demo Notes"** under Interactive Demo Dataset.
 3. Return to **Dashboard** or **Ask My Notes** to immediately test search, extraction, and grounded RAG citations!
 
-*See [`docs/demo-script.md`](docs/demo-script.md) for our timed 3-minute presentation walkthrough.*
+*See [`docs/demo-script.md`](docs/demo-script.md) for our timed 3-minute video presentation script.*
 
 ---
 

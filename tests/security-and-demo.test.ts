@@ -3,7 +3,7 @@ import { getAudioFilePath, saveAudioBuffer, validateAudioFile } from '@/lib/stor
 import { buildExtractionPrompt, buildRagPrompt } from '@/lib/ai/prompts';
 import { DEMO_NOTES } from '@/lib/demo/dataset';
 
-describe('Security & Input Hardening Suite (Phase 4)', () => {
+describe('Security & Input Hardening Suite', () => {
   describe('Path Traversal Defense', () => {
     it('should reject filenames containing path traversal sequences (..)', () => {
       expect(getAudioFilePath('../../etc/passwd')).toBeNull();
@@ -97,7 +97,7 @@ describe('Security & Input Hardening Suite (Phase 4)', () => {
   });
 });
 
-describe('Demo Dataset Integrity (Phase 4)', () => {
+describe('Demo Dataset Integrity', () => {
   it('should contain 6 high-quality cross-domain demo voice notes', () => {
     expect(DEMO_NOTES.length).toBe(6);
   });

@@ -106,7 +106,7 @@ export function TranscriptView({ transcript, onSeek, currentTime = 0 }: Transcri
         )}
       </div>
 
-      {/* Processing Information Bar (Required by Phase 2 spec) */}
+      {/* Processing Information Bar */}
       <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between flex-wrap gap-2 text-xs text-zinc-400">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">

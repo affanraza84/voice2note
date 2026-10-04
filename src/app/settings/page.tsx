@@ -128,7 +128,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between pb-3 border-b border-white/5">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-400" />
-            <h2 className="font-semibold text-base text-white">Hackathon Demo Dataset</h2>
+            <h2 className="font-semibold text-base text-white">Interactive Demo Dataset</h2>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
             Demo Mode Available

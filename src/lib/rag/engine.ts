@@ -21,8 +21,8 @@ export async function queryNotesRAG(question: string, topK = 5): Promise<RAGResp
   const embeddingProvider = getEmbeddingProvider();
   const queryVector = await embeddingProvider.embed(cleanQuery);
 
-  // 2. Perform vector search (with similarity threshold 0.35)
-  const matches = searchVectorChunks(queryVector, topK, 0.35);
+  // 2. Perform vector search (with tuned similarity threshold 0.28)
+  const matches = searchVectorChunks(queryVector, topK, 0.28);
 
   // 3. Build retrieved context
   const retrievedContexts = matches.map((m) => ({

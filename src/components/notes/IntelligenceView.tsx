@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface IntelligenceViewProps {
@@ -26,6 +28,7 @@ interface IntelligenceViewProps {
 export function IntelligenceView({ extraction, noteId, onTaskToggle }: IntelligenceViewProps) {
   const [tasks, setTasks] = useState<TaskItem[]>(extraction?.tasks || []);
   const [showEvidenceFor, setShowEvidenceFor] = useState<Record<string, boolean>>({});
+  const [copiedChecklist, setCopiedChecklist] = useState(false);
 
   if (!extraction) {
     return (
@@ -36,6 +39,19 @@ export function IntelligenceView({ extraction, noteId, onTaskToggle }: Intellige
       </div>
     );
   }
+
+  const copyChecklist = () => {
+    if (tasks.length === 0) return;
+    const lines = [
+      `### Action Items: ${extraction.title}`,
+      ...tasks.map(
+        (t) => `- [${t.completed ? 'x' : ' '}] ${t.title}${t.dueDate ? ` (Due: ${t.dueDate})` : ''}`
+      ),
+    ];
+    navigator.clipboard.writeText(lines.join('\n'));
+    setCopiedChecklist(true);
+    setTimeout(() => setCopiedChecklist(false), 2000);
+  };
 
   const toggleTask = async (taskId: string, currentStatus: boolean) => {
     const nextStatus = !currentStatus;
@@ -84,6 +100,25 @@ export function IntelligenceView({ extraction, noteId, onTaskToggle }: Intellige
               <CheckSquare className="w-4 h-4 text-amber-400" />
               Action Items ({tasks.filter((t) => !t.completed).length} pending)
             </span>
+            {tasks.length > 0 && (
+              <button
+                onClick={copyChecklist}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[11px] font-medium transition-all cursor-pointer border border-white/5"
+                title="Copy all tasks as Markdown checklist"
+              >
+                {copiedChecklist ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="text-emerald-400">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3 text-zinc-400" />
+                    <span>Copy Checklist</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           {tasks.length === 0 ? (

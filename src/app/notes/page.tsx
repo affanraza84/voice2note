@@ -10,6 +10,7 @@ export default function NotesListPage() {
   const [notes, setNotes] = useState<VoiceNote[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedTopic, setSelectedTopic] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   const fetchNotes = async () => {
@@ -30,6 +31,18 @@ export default function NotesListPage() {
     fetchNotes();
   }, []);
 
+  const allTopics = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const n of notes) {
+      if (n.topicTags) {
+        for (const t of n.topicTags) {
+          if (t.trim()) set.add(t.trim());
+        }
+      }
+    }
+    return Array.from(set).sort();
+  }, [notes]);
+
   const filteredNotes = notes.filter((n) => {
     const matchesSearch =
       n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -37,7 +50,11 @@ export default function NotesListPage() {
 
     const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
 
-    return matchesSearch && matchesStatus;
+    const matchesTopic =
+      selectedTopic === 'all' ||
+      (n.topicTags && n.topicTags.some((t) => t.toLowerCase() === selectedTopic.toLowerCase()));
+
+    return matchesSearch && matchesStatus && matchesTopic;
   });
 
   return (
@@ -97,6 +114,36 @@ export default function NotesListPage() {
           ))}
         </div>
       </div>
+
+      {/* Topic Filter Pills (from user feedback) */}
+      {allTopics.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+          <span className="text-[11px] font-medium text-zinc-500 shrink-0">Topics:</span>
+          <button
+            onClick={() => setSelectedTopic('all')}
+            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 font-medium ${
+              selectedTopic === 'all'
+                ? 'bg-white/10 text-white border border-white/20'
+                : 'text-zinc-400 hover:text-zinc-200 bg-white/[0.02] border border-transparent'
+            }`}
+          >
+            All
+          </button>
+          {allTopics.map((topic) => (
+            <button
+              key={topic}
+              onClick={() => setSelectedTopic(topic === selectedTopic ? 'all' : topic)}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 font-medium ${
+                selectedTopic.toLowerCase() === topic.toLowerCase()
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : 'text-zinc-400 hover:text-zinc-200 bg-white/[0.02] border border-white/5'
+              }`}
+            >
+              #{topic}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Notes Grid */}
       {loading ? (

@@ -73,6 +73,8 @@ export interface VoiceNote {
   transcript?: Transcript | null;
   extraction?: Extraction | null;
   summaryPreview?: string | null;
+  taskCount?: number;
+  topicTags?: string[];
 }
 
 export interface Transcript {

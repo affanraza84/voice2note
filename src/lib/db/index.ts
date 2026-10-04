@@ -223,7 +223,8 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
 export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus): VoiceNote[] {
   const db = getDb();
   let query = `
-    SELECT vn.*, t.raw_text as transcript_preview, e.summary as summary_preview
+    SELECT vn.*, t.raw_text as transcript_preview, e.summary as summary_preview,
+           e.tasks as tasks_json, e.topics as topics_json
     FROM voice_notes vn
     LEFT JOIN transcripts t ON vn.id = t.voice_note_id
     LEFT JOIN extractions e ON vn.id = e.voice_note_id
@@ -240,19 +241,35 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
 
   const rows = db.prepare(query).all(...params) as any[];
 
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    audioFileName: row.audio_file_name,
-    mimeType: row.mime_type,
-    fileSizeBytes: row.file_size_bytes,
-    durationSeconds: row.duration_seconds,
-    status: row.status as NoteStatus,
-    errorMessage: row.error_message,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    summaryPreview: row.summary_preview || (row.transcript_preview ? row.transcript_preview.slice(0, 160) + (row.transcript_preview.length > 160 ? '...' : '') : null),
-  }));
+  return rows.map((row) => {
+    let taskCount = 0;
+    try {
+      const parsedTasks = JSON.parse(row.tasks_json || '[]');
+      taskCount = Array.isArray(parsedTasks) ? parsedTasks.length : 0;
+    } catch {}
+
+    let topicTags: string[] = [];
+    try {
+      const parsedTopics = JSON.parse(row.topics_json || '[]');
+      topicTags = Array.isArray(parsedTopics) ? parsedTopics : [];
+    } catch {}
+
+    return {
+      id: row.id,
+      title: row.title,
+      audioFileName: row.audio_file_name,
+      mimeType: row.mime_type,
+      fileSizeBytes: row.file_size_bytes,
+      durationSeconds: row.duration_seconds,
+      status: row.status as NoteStatus,
+      errorMessage: row.error_message,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      summaryPreview: row.summary_preview || (row.transcript_preview ? row.transcript_preview.slice(0, 160) + (row.transcript_preview.length > 160 ? '...' : '') : null),
+      taskCount,
+      topicTags,
+    };
+  });
 }
 
 export function deleteVoiceNote(id: string): { audioFileName: string } | null {

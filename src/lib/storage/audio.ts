@@ -45,6 +45,7 @@ export function validateAudioFile(file: {
   size: number;
   type: string;
   name?: string;
+  buffer?: Buffer;
 }): { valid: boolean; error?: string } {
   if (file.size === 0) {
     return {
@@ -60,10 +61,18 @@ export function validateAudioFile(file: {
     };
   }
 
-  // Normalize mime type (sometimes browsers send audio/webm;codecs=opus)
+  // Security: Check for path traversal in original file name
+  if (file.name && (file.name.includes('..') || file.name.includes('/') || file.name.includes('\\'))) {
+    return {
+      valid: false,
+      error: 'Invalid file name contains illegal path traversal characters.',
+    };
+  }
+
+  // Normalize mime type (e.g. audio/webm;codecs=opus)
   const baseMime = file.type.split(';')[0].trim().toLowerCase();
-  
-  // Extension fallback check if MIME type is generic application/octet-stream
+
+  // Extension check if MIME type is generic
   if (!SUPPORTED_AUDIO_MIME_TYPES.has(baseMime)) {
     const ext = file.name ? path.extname(file.name).toLowerCase() : '';
     const knownExtensions = ['.webm', '.wav', '.mp3', '.m4a', '.mp4', '.aac', '.ogg', '.flac'];
@@ -72,6 +81,24 @@ export function validateAudioFile(file: {
         valid: false,
         error: `Unsupported audio format "${file.type || ext}". Supported formats: WebM, WAV, MP3, M4A, AAC, OGG.`,
       };
+    }
+  }
+
+  // Security: Basic magic bytes inspection against executable masquerading
+  if (file.buffer && file.buffer.length >= 4) {
+    const header = file.buffer.slice(0, 4);
+    // Disallow Windows PE executables (MZ)
+    if (header[0] === 0x4d && header[1] === 0x5a) {
+      return { valid: false, error: 'Executable binaries are rejected.' };
+    }
+    // Disallow ELF binaries (\x7fELF)
+    if (header[0] === 0x7f && header[1] === 0x45 && header[2] === 0x4c && header[3] === 0x46) {
+      return { valid: false, error: 'ELF binaries are rejected.' };
+    }
+    // Disallow script headers (#! or <?php or <script)
+    const headerStr = file.buffer.slice(0, 16).toString('utf8');
+    if (headerStr.startsWith('#!') || headerStr.startsWith('<?php') || headerStr.toLowerCase().includes('<script')) {
+      return { valid: false, error: 'Script files are rejected.' };
     }
   }
 
@@ -119,6 +146,18 @@ export async function saveAudioBuffer(
 ): Promise<StoredAudioMetadata> {
   ensureStorageDirectories();
 
+  // Validate buffer security
+  const validation = validateAudioFile({
+    size: buffer.length,
+    type: mimeType,
+    name: originalName,
+    buffer,
+  });
+
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Audio validation failed');
+  }
+
   const id = crypto.randomUUID();
   const ext = path.extname(originalName) || (mimeType.includes('webm') ? '.webm' : '.wav');
   const safeFileName = `${id}${ext}`;
@@ -128,7 +167,7 @@ export async function saveAudioBuffer(
 
   let durationSeconds = await probeAudioDuration(targetPath);
 
-  // Transcode to normalized WAV for Whisper
+  // Transcode to normalized 16kHz mono WAV for Whisper
   const normalizedWavFileName = `${id}_16k.wav`;
   const normalizedWavPath = path.join(AUDIO_STORAGE_DIR, normalizedWavFileName);
 
@@ -144,7 +183,7 @@ export async function saveAudioBuffer(
   return {
     id,
     fileName: safeFileName,
-    originalName,
+    originalName: path.basename(originalName),
     mimeType,
     fileSizeBytes: buffer.length,
     durationSeconds,
@@ -154,7 +193,10 @@ export async function saveAudioBuffer(
 }
 
 export function getAudioFilePath(fileName: string): string | null {
-  // Prevent directory traversal
+  // Prevent directory traversal: strictly ensure clean filename without separators or parent directory references
+  if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+    return null;
+  }
   const safeName = path.basename(fileName);
   const fullPath = path.join(AUDIO_STORAGE_DIR, safeName);
   if (fs.existsSync(fullPath)) {
@@ -164,6 +206,9 @@ export function getAudioFilePath(fileName: string): string | null {
 }
 
 export function deleteAudioFiles(id: string, fileName: string): void {
+  if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+    return;
+  }
   const safeName = path.basename(fileName);
   const mainFile = path.join(AUDIO_STORAGE_DIR, safeName);
   const normalizedWav = path.join(AUDIO_STORAGE_DIR, `${id}_16k.wav`);

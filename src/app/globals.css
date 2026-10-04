@@ -2,66 +2,85 @@
 
 :root {
   --background: #090a0f;
+  --surface: #11131a;
+  --surface-raised: #181b24;
+  --surface-border: rgba(255, 255, 255, 0.07);
+  --surface-border-hover: rgba(255, 255, 255, 0.14);
   --foreground: #f3f4f6;
-  --card-bg: rgba(18, 20, 29, 0.7);
-  --card-border: rgba(255, 255, 255, 0.08);
-  --accent-primary: #10b981;
-  --accent-glow: rgba(16, 185, 129, 0.25);
-  --accent-secondary: #6366f1;
+  --foreground-muted: #9ca3af;
+  --primary: #10b981;
+  --primary-glow: rgba(16, 185, 129, 0.15);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glassmorphism helpers */
-.glass-panel {
-  background: var(--card-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--card-border);
+/* Calm, clean card styling */
+.card-base {
+  background-color: var(--surface);
+  border: 1px solid var(--surface-border);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.glass-card-hover {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.card-base:hover {
+  border-color: var(--surface-border-hover);
 }
 
-.glass-card-hover:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+.card-raised {
+  background-color: var(--surface-raised);
+  border: 1px solid var(--surface-border);
 }
 
-/* Pulse glow for recording */
-@keyframes pulseGlow {
+/* Subtle recording pulse */
+@keyframes calmPulse {
   0%, 100% {
-    box-shadow: 0 0 15px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(239, 68, 68, 0.2);
+    opacity: 1;
+    transform: scale(1);
   }
   50% {
-    box-shadow: 0 0 35px rgba(239, 68, 68, 0.8), inset 0 0 25px rgba(239, 68, 68, 0.4);
+    opacity: 0.85;
+    transform: scale(1.02);
   }
 }
 
-.recording-pulse {
-  animation: pulseGlow 1.8s infinite;
+.recording-calm-pulse {
+  animation: calmPulse 2s ease-in-out infinite;
+}
+
+/* Clean accessible focus indicators */
+*:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
 }
 
 /* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

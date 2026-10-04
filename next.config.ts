@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["better-sqlite3", "@xenova/transformers", "onnxruntime-node", "wavefile"],
 };
 
 export default nextConfig;

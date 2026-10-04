@@ -14,6 +14,50 @@ export interface TranscriptSegment {
   confidence?: number;
 }
 
+export interface TaskItem {
+  id: string;
+  title: string;
+  sourceNoteId: string;
+  evidence: string;
+  confidence: number;
+  dueDate?: string | null;
+  completed: boolean;
+  priority: 'low' | 'medium' | 'high';
+}
+
+export interface IdeaItem {
+  id: string;
+  idea: string;
+  evidence: string;
+}
+
+export interface DecisionItem {
+  id: string;
+  decision: string;
+  evidence: string;
+}
+
+export interface ImportantDateItem {
+  event: string;
+  date: string;
+  evidence?: string;
+}
+
+export interface Extraction {
+  id: string;
+  voiceNoteId: string;
+  title: string;
+  summary: string;
+  tasks: TaskItem[];
+  ideas: IdeaItem[];
+  decisions: DecisionItem[];
+  people: string[];
+  topics: string[];
+  importantDates: ImportantDateItem[];
+  modelUsed?: string;
+  createdAt: string;
+}
+
 export interface VoiceNote {
   id: string;
   title: string;
@@ -25,8 +69,9 @@ export interface VoiceNote {
   errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
-  // Joined or included fields
+  // Included relations
   transcript?: Transcript | null;
+  extraction?: Extraction | null;
   summaryPreview?: string | null;
 }
 
@@ -41,26 +86,48 @@ export interface Transcript {
   createdAt: string;
 }
 
-export interface TaskItem {
-  id: string;
-  content: string;
-  contextQuote?: string;
-  priority: 'low' | 'medium' | 'high';
-  status: 'todo' | 'in_progress' | 'completed' | 'dismissed';
-  dueDate?: string | null;
+export interface ChunkMetadata {
+  noteId: string;
+  noteTitle: string;
+  chunkIndex: number;
+  startTime?: number;
+  endTime?: number;
+  topic?: string;
+  createdAt: string;
 }
 
-export interface Extraction {
+export interface VectorChunk {
   id: string;
-  voiceNoteId: string;
-  summary: string;
-  tasks: TaskItem[];
-  ideas: string[];
-  decisions: string[];
-  people: string[];
-  topics: string[];
-  importantDates: Array<{ event: string; dateString: string }>;
+  noteId: string;
+  chunkIndex: number;
+  text: string;
+  embedding: number[];
+  metadata: ChunkMetadata;
   createdAt: string;
+}
+
+export interface SearchResult {
+  noteId: string;
+  noteTitle: string;
+  matchedText: string;
+  score: number;
+  startTime?: number;
+  createdAt: string;
+}
+
+export interface RAGCitation {
+  noteId: string;
+  noteTitle: string;
+  quote: string;
+  startTime?: number;
+  score: number;
+}
+
+export interface RAGResponse {
+  answer: string;
+  citations: RAGCitation[];
+  modelUsed: string;
+  isGrounded: boolean;
 }
 
 export type LocalAIStatusType = 

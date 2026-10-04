@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { VoiceNote } from '@/types';
 import { AudioPlayer } from '@/components/notes/AudioPlayer';
 import { TranscriptView } from '@/components/notes/TranscriptView';
+import { IntelligenceView } from '@/components/notes/IntelligenceView';
+import { RelatedNotes } from '@/components/notes/RelatedNotes';
 import {
   ArrowLeft,
   Calendar,
@@ -18,6 +20,7 @@ import {
   RefreshCw,
   AlertCircle,
   FileAudio,
+  Sparkles,
 } from 'lucide-react';
 
 export default function NoteDetailPage() {
@@ -27,6 +30,7 @@ export default function NoteDetailPage() {
 
   const [note, setNote] = useState<VoiceNote | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'intelligence' | 'transcript'>('intelligence');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState('');
   const [seekTime, setSeekTime] = useState<number | null>(null);
@@ -290,15 +294,53 @@ export default function NoteDetailPage() {
         />
       </div>
 
-      {/* Transcript Section */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-bold text-white">Transcript</h2>
-        <TranscriptView
-          transcript={note.transcript || null}
-          currentTime={currentTime}
-          onSeek={(sec) => setSeekTime(sec)}
-        />
+      {/* Main Tabs: Structured Intelligence vs Raw Transcript */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+          <button
+            onClick={() => setActiveTab('intelligence')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'intelligence'
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Structured Intelligence</span>
+            {note.extraction?.tasks && note.extraction.tasks.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('transcript')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'transcript'
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <span>Full Transcript</span>
+          </button>
+        </div>
+
+        {activeTab === 'intelligence' ? (
+          <IntelligenceView
+            extraction={note.extraction || null}
+            noteId={note.id}
+            onTaskToggle={(_tId, _st) => {}}
+          />
+        ) : (
+          <TranscriptView
+            transcript={note.transcript || null}
+            currentTime={currentTime}
+            onSeek={(sec) => setSeekTime(sec)}
+          />
+        )}
       </div>
+
+      {/* Related Notes (Vector Similarity) */}
+      <RelatedNotes noteId={note.id} />
     </div>
   );
 }

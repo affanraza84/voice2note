@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { VoiceNote, Transcript, NoteStatus, Extraction } from '@/types';
+import { VoiceNote, Transcript, NoteStatus, Extraction, TaskItem, VectorChunk } from '@/types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'voice2note.db');
@@ -49,6 +49,7 @@ export function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS extractions (
       id TEXT PRIMARY KEY,
       voice_note_id TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL DEFAULT '',
       summary TEXT NOT NULL,
       tasks TEXT NOT NULL,
       ideas TEXT NOT NULL,
@@ -56,8 +57,20 @@ export function getDb(): Database.Database {
       people TEXT NOT NULL,
       topics TEXT NOT NULL,
       important_dates TEXT NOT NULL,
+      model_used TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (voice_note_id) REFERENCES voice_notes(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS note_embeddings (
+      id TEXT PRIMARY KEY,
+      note_id TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      metadata TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (note_id) REFERENCES voice_notes(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -68,13 +81,25 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_voice_notes_created_at ON voice_notes(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_voice_notes_status ON voice_notes(status);
+    CREATE INDEX IF NOT EXISTS idx_note_embeddings_note ON note_embeddings(note_id);
   `);
+
+  // Safely add any new columns to extractions if previously created without them
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN title TEXT NOT NULL DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN model_used TEXT NOT NULL DEFAULT ''`).run();
+  } catch {}
 
   dbInstance = db;
   return dbInstance;
 }
 
-// Data Access Functions
+// -------------------------------------------------------------
+// VoiceNote CRUD
+// -------------------------------------------------------------
+
 export function createVoiceNote(note: {
   id: string;
   title: string;
@@ -166,6 +191,7 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
     extraction = {
       id: extractionRow.id,
       voiceNoteId: extractionRow.voice_note_id,
+      title: extractionRow.title || '',
       summary: extractionRow.summary,
       tasks: JSON.parse(extractionRow.tasks || '[]'),
       ideas: JSON.parse(extractionRow.ideas || '[]'),
@@ -173,6 +199,7 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
       people: JSON.parse(extractionRow.people || '[]'),
       topics: JSON.parse(extractionRow.topics || '[]'),
       importantDates: JSON.parse(extractionRow.important_dates || '[]'),
+      modelUsed: extractionRow.model_used || '',
       createdAt: extractionRow.created_at,
     };
   }
@@ -196,9 +223,10 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
 export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus): VoiceNote[] {
   const db = getDb();
   let query = `
-    SELECT vn.*, t.raw_text as transcript_preview
+    SELECT vn.*, t.raw_text as transcript_preview, e.summary as summary_preview
     FROM voice_notes vn
     LEFT JOIN transcripts t ON vn.id = t.voice_note_id
+    LEFT JOIN extractions e ON vn.id = e.voice_note_id
   `;
   const params: any[] = [];
 
@@ -223,7 +251,7 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    summaryPreview: row.transcript_preview ? row.transcript_preview.slice(0, 160) + (row.transcript_preview.length > 160 ? '...' : '') : null,
+    summaryPreview: row.summary_preview || (row.transcript_preview ? row.transcript_preview.slice(0, 160) + (row.transcript_preview.length > 160 ? '...' : '') : null),
   }));
 }
 
@@ -235,6 +263,10 @@ export function deleteVoiceNote(id: string): { audioFileName: string } | null {
   db.prepare(`DELETE FROM voice_notes WHERE id = ?`).run(id);
   return { audioFileName: row.audio_file_name };
 }
+
+// -------------------------------------------------------------
+// Transcripts
+// -------------------------------------------------------------
 
 export function saveTranscript(data: {
   id: string;
@@ -282,6 +314,232 @@ export function saveTranscript(data: {
     createdAt: now,
   };
 }
+
+// -------------------------------------------------------------
+// Extractions (Tasks, Ideas, Decisions, Summary)
+// -------------------------------------------------------------
+
+export function saveExtraction(data: {
+  id: string;
+  voiceNoteId: string;
+  title: string;
+  summary: string;
+  tasks: TaskItem[];
+  ideas: any[];
+  decisions: any[];
+  people: string[];
+  topics: string[];
+  importantDates: any[];
+  modelUsed?: string;
+}): Extraction {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  const stmt = db.prepare(`
+    INSERT INTO extractions (id, voice_note_id, title, summary, tasks, ideas, decisions, people, topics, important_dates, model_used, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(voice_note_id) DO UPDATE SET
+      title = excluded.title,
+      summary = excluded.summary,
+      tasks = excluded.tasks,
+      ideas = excluded.ideas,
+      decisions = excluded.decisions,
+      people = excluded.people,
+      topics = excluded.topics,
+      important_dates = excluded.important_dates,
+      model_used = excluded.model_used,
+      created_at = excluded.created_at
+  `);
+
+  stmt.run(
+    data.id,
+    data.voiceNoteId,
+    data.title,
+    data.summary,
+    JSON.stringify(data.tasks),
+    JSON.stringify(data.ideas),
+    JSON.stringify(data.decisions),
+    JSON.stringify(data.people),
+    JSON.stringify(data.topics),
+    JSON.stringify(data.importantDates),
+    data.modelUsed || '',
+    now
+  );
+
+  return {
+    id: data.id,
+    voiceNoteId: data.voiceNoteId,
+    title: data.title,
+    summary: data.summary,
+    tasks: data.tasks,
+    ideas: data.ideas,
+    decisions: data.decisions,
+    people: data.people,
+    topics: data.topics,
+    importantDates: data.importantDates,
+    modelUsed: data.modelUsed,
+    createdAt: now,
+  };
+}
+
+export function updateTaskStatus(voiceNoteId: string, taskId: string, completed: boolean): TaskItem[] | null {
+  const db = getDb();
+  const row = db.prepare(`SELECT tasks FROM extractions WHERE voice_note_id = ?`).get(voiceNoteId) as any;
+  if (!row) return null;
+
+  const tasks: TaskItem[] = JSON.parse(row.tasks || '[]');
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return null;
+
+  task.completed = completed;
+  db.prepare(`UPDATE extractions SET tasks = ? WHERE voice_note_id = ?`).run(JSON.stringify(tasks), voiceNoteId);
+  return tasks;
+}
+
+// -------------------------------------------------------------
+// Vector Embeddings & Similarity Search
+// -------------------------------------------------------------
+
+function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+export function saveEmbeddingChunks(chunks: VectorChunk[]): void {
+  const db = getDb();
+  const insertStmt = db.prepare(`
+    INSERT OR REPLACE INTO note_embeddings (id, note_id, chunk_index, text, embedding, metadata, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const transaction = db.transaction((items: VectorChunk[]) => {
+    for (const chunk of items) {
+      const buffer = Buffer.from(new Float32Array(chunk.embedding).buffer);
+      insertStmt.run(
+        chunk.id,
+        chunk.noteId,
+        chunk.chunkIndex,
+        chunk.text,
+        buffer,
+        JSON.stringify(chunk.metadata),
+        chunk.createdAt
+      );
+    }
+  });
+
+  transaction(chunks);
+}
+
+export function deleteEmbeddingChunksForNote(noteId: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(noteId);
+}
+
+export function searchVectorChunks(
+  queryEmbedding: number[],
+  topK = 5,
+  minScore = 0.3,
+  filterNoteId?: string
+): Array<VectorChunk & { score: number }> {
+  const db = getDb();
+  let query = `SELECT * FROM note_embeddings`;
+  const params: any[] = [];
+
+  if (filterNoteId) {
+    query += ` WHERE note_id = ?`;
+    params.push(filterNoteId);
+  }
+
+  const rows = db.prepare(query).all(...params) as any[];
+  const qVector = new Float32Array(queryEmbedding);
+
+  const scoredResults: Array<VectorChunk & { score: number }> = [];
+
+  for (const row of rows) {
+    const rawBuffer = row.embedding as Buffer;
+    const chunkVector = new Float32Array(
+      rawBuffer.buffer,
+      rawBuffer.byteOffset,
+      rawBuffer.byteLength / Float32Array.BYTES_PER_ELEMENT
+    );
+
+    const score = cosineSimilarity(qVector, chunkVector);
+
+    if (score >= minScore) {
+      scoredResults.push({
+        id: row.id,
+        noteId: row.note_id,
+        chunkIndex: row.chunk_index,
+        text: row.text,
+        embedding: [], // Omit raw vector to save memory
+        metadata: JSON.parse(row.metadata || '{}'),
+        createdAt: row.created_at,
+        score: Math.round(score * 1000) / 1000,
+      });
+    }
+  }
+
+  scoredResults.sort((a, b) => b.score - a.score);
+  return scoredResults.slice(0, topK);
+}
+
+export function findRelatedNotes(
+  noteId: string,
+  topK = 3
+): Array<{ noteId: string; noteTitle: string; score: number }> {
+  const db = getDb();
+  // Fetch chunks for the target note
+  const sourceChunks = db.prepare(`SELECT embedding FROM note_embeddings WHERE note_id = ?`).all(noteId) as any[];
+  if (sourceChunks.length === 0) return [];
+
+  // Average vector for the note
+  const rawBuf0 = sourceChunks[0].embedding as Buffer;
+  const dim = rawBuf0.byteLength / Float32Array.BYTES_PER_ELEMENT;
+  const avgVector = new Float32Array(dim);
+
+  for (const sc of sourceChunks) {
+    const buf = sc.embedding as Buffer;
+    const v = new Float32Array(buf.buffer, buf.byteOffset, dim);
+    for (let i = 0; i < dim; i++) {
+      avgVector[i] += v[i] / sourceChunks.length;
+    }
+  }
+
+  const matches = searchVectorChunks(Array.from(avgVector), 20, 0.4);
+  const noteScores = new Map<string, { noteTitle: string; maxScore: number }>();
+
+  for (const match of matches) {
+    if (match.noteId === noteId) continue;
+    const existing = noteScores.get(match.noteId);
+    if (!existing || match.score > existing.maxScore) {
+      noteScores.set(match.noteId, {
+        noteTitle: match.metadata.noteTitle || 'Untitled Note',
+        maxScore: match.score,
+      });
+    }
+  }
+
+  const results = Array.from(noteScores.entries()).map(([nId, data]) => ({
+    noteId: nId,
+    noteTitle: data.noteTitle,
+    score: data.maxScore,
+  }));
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, topK);
+}
+
+// -------------------------------------------------------------
+// Stats & Settings
+// -------------------------------------------------------------
 
 export function getStats(): {
   totalNotes: number;

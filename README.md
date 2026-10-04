@@ -104,6 +104,6 @@ voice2note/
 ## 🗺️ Roadmap
 - [x] **Phase 1:** Product Discovery, Requirements & System Architecture
 - [x] **Phase 2:** Core Application + Voice Recording + Local Transcription
-- [ ] **Phase 3:** Open-Weight LLM Intelligence Extraction (Tasks, Ideas, Decisions)
-- [ ] **Phase 4:** Local Knowledge Base + "Ask My Notes" RAG Interface
+- [x] **Phase 3:** Open-Weight LLM Intelligence + Knowledge Extraction + RAG
+- [ ] **Phase 4:** Deep Knowledge Graph & Multi-Note Synthesis
 - [ ] **Phase 5:** Final UX Polish, Differentiator & Demonstration

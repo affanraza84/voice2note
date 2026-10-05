@@ -23,7 +23,9 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-import { getClientNote } from '@/lib/storage/client-db';
+import { getClientNote, getClientAudioBlob } from '@/lib/storage/client-db';
+import { preprocessAudioForWhisper } from '@/lib/audio/browser-audio';
+import { getBrowserWhisper } from '@/lib/ai/browser-whisper';
 
 export default function NoteDetailPage() {
   const params = useParams();
@@ -38,6 +40,8 @@ export default function NoteDetailPage() {
   const [seekTime, setSeekTime] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [retranscribing, setRetranscribing] = useState(false);
+  const [processingSeconds, setProcessingSeconds] = useState(0);
+  const [retryStatusText, setRetryStatusText] = useState<string | null>(null);
 
   const fetchNote = React.useCallback(async () => {
     if (!id) return;
@@ -83,10 +87,26 @@ export default function NoteDetailPage() {
   useEffect(() => {
     if (!note) return;
     if (['uploading', 'processing', 'transcribing', 'analyzing'].includes(note.status)) {
-      const interval = setInterval(fetchNote, 2500);
+      const interval = setInterval(fetchNote, 2000);
       return () => clearInterval(interval);
     }
   }, [note?.status, fetchNote, note]);
+
+  // Track active processing elapsed seconds
+  useEffect(() => {
+    const isActivelyProcessing = note && ['uploading', 'processing', 'transcribing', 'analyzing'].includes(note.status);
+    let interval: NodeJS.Timeout | null = null;
+    if (isActivelyProcessing) {
+      interval = setInterval(() => {
+        setProcessingSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      setProcessingSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [note?.status, note]);
 
   const handleSaveTitle = async () => {
     if (!titleInput.trim()) return;
@@ -122,11 +142,44 @@ export default function NoteDetailPage() {
 
   const handleRetryTranscription = async () => {
     setRetranscribing(true);
+    setRetryStatusText('Checking local audio cache...');
+
     try {
+      // 1. Check if we have the audio blob cached in client IndexedDB
+      const clientBlob = await getClientAudioBlob(id);
+      if (clientBlob) {
+        setRetryStatusText('Decoding audio on device...');
+        const prep = await preprocessAudioForWhisper(clientBlob);
+        
+        setRetryStatusText('Transcribing with on-device Whisper...');
+        const whisper = getBrowserWhisper();
+        const result = await whisper.transcribe(prep.pcmFloat32, 90000);
+
+        if (result.text && result.text.length > 0) {
+          setRetryStatusText('Saving transcript and extracting knowledge...');
+          await fetch(`/api/notes/${id}/transcribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transcriptText: result.text,
+              transcriptSegments: result.segments,
+              processingTimeMs: result.processingTimeMs,
+            }),
+          });
+          fetchNote();
+          setRetryStatusText(null);
+          return;
+        }
+      }
+
+      // 2. Server-side retry fallback
+      setRetryStatusText('Submitting retry to server...');
       await fetch(`/api/notes/${id}/transcribe`, { method: 'POST' });
       fetchNote();
-    } catch (err) {
+      setRetryStatusText(null);
+    } catch (err: any) {
       console.error('Retry failed:', err);
+      setRetryStatusText(err?.message || 'Retry failed');
     } finally {
       setRetranscribing(false);
     }
@@ -279,27 +332,62 @@ export default function NoteDetailPage() {
 
         {/* Processing Banner if active */}
         {isProcessing && (
-          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center justify-between animate-pulse">
-            <div className="flex items-center gap-2.5">
-              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-              <span>
-                {note.status === 'transcribing'
-                  ? 'Transcribing speech locally with Whisper...'
-                  : 'Processing audio on your device...'}
-              </span>
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                <span className="font-semibold">
+                  {note.status === 'transcribing'
+                    ? `Transcribing speech locally • Whisper ONNX • ${processingSeconds}s elapsed`
+                    : note.status === 'analyzing'
+                    ? `Analyzing intelligence • Llama 3.2 • ${processingSeconds}s elapsed`
+                    : `Processing audio on your device... • ${processingSeconds}s elapsed`}
+                </span>
+              </div>
+              <span className="font-mono text-[10px] text-amber-400/80">Local ONNX Engine</span>
             </div>
-            <span className="font-mono text-[10px] text-amber-400/80">Local ONNX Engine</span>
+
+            {processingSeconds > 20 && (
+              <div className="flex items-center justify-between text-[11px] text-amber-400/90 pt-1.5 border-t border-amber-500/15">
+                <span>Still processing locally... Longer recordings and initial model compilation may take extra time.</span>
+                <button
+                  onClick={handleRetryTranscription}
+                  disabled={retranscribing}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium transition cursor-pointer shrink-0 ml-3"
+                >
+                  <RefreshCw className={`w-3 h-3 ${retranscribing ? 'animate-spin' : ''}`} />
+                  <span>{retranscribing ? 'Retrying...' : 'Retry Processing'}</span>
+                </button>
+              </div>
+            )}
+
+            {retryStatusText && (
+              <p className="text-[11px] text-emerald-400 font-mono">
+                {retryStatusText}
+              </p>
+            )}
           </div>
         )}
 
         {/* Error Banner if failed */}
         {note.status === 'failed' && (
-          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="font-semibold text-white">Transcription Failed</span>
-              <p>{note.errorMessage || 'An error occurred during local speech processing.'}</p>
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-semibold text-white">Transcription Incomplete</span>
+                <p>{note.errorMessage || 'An error occurred during local speech processing. Your audio is safely saved.'}</p>
+                {retryStatusText && <p className="text-emerald-400 font-mono text-[11px]">{retryStatusText}</p>}
+              </div>
             </div>
+            <button
+              onClick={handleRetryTranscription}
+              disabled={retranscribing}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-white font-medium transition cursor-pointer shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${retranscribing ? 'animate-spin' : ''}`} />
+              <span>{retranscribing ? 'Retrying...' : 'Retry Processing'}</span>
+            </button>
           </div>
         )}
 

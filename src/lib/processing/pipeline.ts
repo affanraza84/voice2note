@@ -61,11 +61,36 @@ export async function processVoiceNote(noteId: string): Promise<void> {
         updateVoiceNoteStatus(noteId, 'transcribing');
 
         const speechProvider = getSpeechProvider();
-        result = await speechProvider.transcribe({
-          filePath: processingFile.filePath,
-          mimeType: note.mimeType,
-          durationSeconds: note.durationSeconds,
-        });
+        
+        // Timeout guard for serverless lambdas (14s max so lambda doesn't terminate silently)
+        const isServerless = Boolean(
+          process.env.VERCEL ||
+          process.env.AWS_LAMBDA_FUNCTION_NAME ||
+          (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
+        );
+
+        if (isServerless && speechProvider.id === 'local-whisper') {
+          // If in serverless without remote API key, local Whisper download will exceed lambda limits
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Serverless execution timeout: Local ONNX model download exceeds lambda limits. In-browser Whisper will transcribe on your device.'));
+            }, 12000);
+          });
+          result = await Promise.race([
+            speechProvider.transcribe({
+              filePath: processingFile.filePath,
+              mimeType: note.mimeType,
+              durationSeconds: note.durationSeconds,
+            }),
+            timeoutPromise,
+          ]);
+        } else {
+          result = await speechProvider.transcribe({
+            filePath: processingFile.filePath,
+            mimeType: note.mimeType,
+            durationSeconds: note.durationSeconds,
+          });
+        }
       } finally {
         // Ephemeral cleanup for downloaded temporary audio
         await processingFile.cleanup();

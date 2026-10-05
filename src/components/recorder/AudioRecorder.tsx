@@ -60,6 +60,7 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
   const [title, setTitle] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusDetailText, setStatusDetailText] = useState<string>('');
+  const [processingSeconds, setProcessingSeconds] = useState(0);
 
   // Whisper model progress
   const [whisperProgress, setWhisperProgress] = useState<BrowserWhisperProgress | null>(null);
@@ -68,20 +69,47 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Subscribe to browser Whisper progress
+  // Subscribe to browser Whisper progress and preload on idle
   useEffect(() => {
     const whisper = getBrowserWhisper();
     const unsubscribe = whisper.subscribe((prog) => {
       setWhisperProgress(prog);
     });
+
+    // Preload Whisper pipeline in background on idle so recording starts with model ready!
+    if (typeof window !== 'undefined') {
+      const idleCallback = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1200));
+      idleCallback(() => {
+        whisper.preload();
+      });
+    }
+
     return () => unsubscribe();
   }, []);
+
+  // Track processing elapsed time
+  useEffect(() => {
+    const isActivelyProcessing = ['preparing-audio', 'transcribing', 'saving', 'analyzing'].includes(status);
+    if (isActivelyProcessing) {
+      setProcessingSeconds(0);
+      processingTimerRef.current = setInterval(() => {
+        setProcessingSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      if (processingTimerRef.current) clearInterval(processingTimerRef.current);
+      setProcessingSeconds(0);
+    }
+    return () => {
+      if (processingTimerRef.current) clearInterval(processingTimerRef.current);
+    };
+  }, [status]);
 
   // Clean up timers and audio streams on unmount
   useEffect(() => {
@@ -383,13 +411,13 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
     try {
       setStatus('transcribing');
       setStatusDetailText('Transcribing on-device with Whisper...');
-      const result = await whisper.transcribe(prepData.pcmFloat32, 45000);
+      const result = await whisper.transcribe(prepData.pcmFloat32, 90000);
       if (result.text && result.text.length > 0) {
         clientTranscript = {
           text: result.text,
           segments: result.segments,
         };
-        console.log('[Voice2Note] In-browser transcription succeeded:', clientTranscript.text);
+        console.log(`[Voice2Note] In-browser transcription succeeded in ${result.processingTimeMs}ms:`, clientTranscript.text);
       }
     } catch (whisperErr: any) {
       console.warn('[Voice2Note] Browser Whisper skipped/failed, will use server pipeline:', whisperErr);
@@ -544,10 +572,21 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
         status === 'ready') && (
         <div className="p-6 rounded-2xl card-raised border border-emerald-500/20 space-y-4 animate-in fade-in duration-150">
           <div className="text-center space-y-1">
-            <h3 className="font-bold text-sm text-white">Processing your recording...</h3>
+            <h3 className="font-bold text-sm text-white">
+              {status === 'transcribing'
+                ? `Transcribing locally • ${processingSeconds}s elapsed`
+                : status === 'analyzing'
+                ? `Extracting intelligence • ${processingSeconds}s elapsed`
+                : `Processing your recording... • ${processingSeconds}s elapsed`}
+            </h3>
             <p className="text-xs text-emerald-400 font-medium">
               {statusDetailText || 'Executing pipeline...'}
             </p>
+            {processingSeconds > 20 && (
+              <p className="text-[11px] text-amber-400/90 animate-pulse">
+                Still processing locally... Longer recordings and initial model compilation may take extra time.
+              </p>
+            )}
             {whisperProgress?.state === 'loading-model' && (
               <p className="text-[11px] text-zinc-400">
                 {whisperProgress.statusText} ({whisperProgress.progressPercent}%)

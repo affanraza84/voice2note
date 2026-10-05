@@ -83,12 +83,17 @@ export class LocalSpeechProvider implements SpeechProvider {
         ? audio.durationSeconds 
         : await probeAudioDuration(wavPath);
 
-      // Run local whisper pipeline
-      const output = await transcriber(audioSamples, {
+      // Run local whisper pipeline with single-pass optimization for <= 30s
+      const isShort = (audioSamples.length / 16000) <= 30;
+      const whisperOptions: any = {
         return_timestamps: true,
-        chunk_length_s: 30,
-        stride_length_s: 5,
-      });
+      };
+      if (!isShort) {
+        whisperOptions.chunk_length_s = 30;
+        whisperOptions.stride_length_s = 5;
+      }
+
+      const output = await transcriber(audioSamples, whisperOptions);
 
       const rawText = (output.text || '').trim();
       const chunks = output.chunks || [];

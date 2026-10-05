@@ -10,13 +10,41 @@ interface AudioPlayerProps {
   seekTime?: number | null;
 }
 
+import { getClientAudioBlob } from '@/lib/storage/client-db';
+
 export function AudioPlayer({ noteId, durationSeconds = 0, onTimeUpdate, seekTime }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioSource, setAudioSource] = useState<string>(`/api/audio/${noteId}`);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(durationSeconds);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const resolveAudio = async () => {
+      try {
+        const res = await fetch(`/api/audio/${noteId}`, { method: 'HEAD' });
+        if (res.ok) {
+          setAudioSource(`/api/audio/${noteId}`);
+          return;
+        }
+      } catch {}
+
+      // Fallback to offline/client IndexedDB blob
+      const localBlob = await getClientAudioBlob(noteId);
+      if (localBlob) {
+        objectUrl = URL.createObjectURL(localBlob);
+        setAudioSource(objectUrl);
+      }
+    };
+
+    resolveAudio();
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [noteId]);
 
   // Sync seekTime from parent (e.g. clicking a timestamp in the transcript)
   useEffect(() => {
@@ -88,7 +116,7 @@ export function AudioPlayer({ noteId, durationSeconds = 0, onTimeUpdate, seekTim
     <div className="p-4 sm:p-5 rounded-2xl glass-panel border border-white/10 shadow-xl space-y-3">
       <audio
         ref={audioRef}
-        src={`/api/audio/${noteId}`}
+        src={audioSource}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={() => setIsPlaying(false)}

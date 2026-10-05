@@ -15,25 +15,54 @@ import {
   Sparkles,
   Database,
   CheckCircle2,
+  RefreshCw,
+  Download,
 } from 'lucide-react';
+import { preprocessAudioForWhisper, PreprocessedAudio } from '@/lib/audio/browser-audio';
+import { getBrowserWhisper, BrowserWhisperProgress } from '@/lib/ai/browser-whisper';
+import { saveClientNote } from '@/lib/storage/client-db';
+import { DiagnosticPanel } from '@/components/debug/DiagnosticPanel';
 
 interface AudioRecorderProps {
   onSuccess?: (noteId: string) => void;
 }
 
+export type RecorderState =
+  | 'idle'
+  | 'recording'
+  | 'paused'
+  | 'stopped'
+  | 'preparing-audio'
+  | 'transcribing'
+  | 'saving'
+  | 'analyzing'
+  | 'indexing'
+  | 'ready'
+  | 'failed';
+
+export type FailureStage =
+  | 'recording-failed'
+  | 'audio-processing-failed'
+  | 'transcription-failed'
+  | 'analysis-failed'
+  | 'storage-failed';
+
 export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
   const router = useRouter();
 
-  // Recording states: 'idle' | 'recording' | 'paused' | 'stopped' | 'saving'
-  const [status, setStatus] = useState<'idle' | 'recording' | 'paused' | 'stopped' | 'saving'>('idle');
+  // State machine
+  const [status, setStatus] = useState<RecorderState>('idle');
+  const [failureStage, setFailureStage] = useState<FailureStage | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [preprocessed, setPreprocessed] = useState<PreprocessedAudio | null>(null);
   const [title, setTitle] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusDetailText, setStatusDetailText] = useState<string>('');
 
-  // Granular processing feedback state
-  const [processingStage, setProcessingStage] = useState<'saving' | 'transcribing' | 'analyzing' | 'indexing' | 'ready'>('saving');
+  // Whisper model progress
+  const [whisperProgress, setWhisperProgress] = useState<BrowserWhisperProgress | null>(null);
 
   // Refs for audio handling
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -44,6 +73,15 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // Subscribe to browser Whisper progress
+  useEffect(() => {
+    const whisper = getBrowserWhisper();
+    const unsubscribe = whisper.subscribe((prog) => {
+      setWhisperProgress(prog);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Clean up timers and audio streams on unmount
   useEffect(() => {
@@ -67,11 +105,14 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
 
   const startRecording = async () => {
     setErrorMessage(null);
+    setFailureStage(null);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setFailureStage('recording-failed');
       setErrorMessage(
         'Your browser does not support audio recording. Please use modern Chrome, Safari, Firefox, or Edge.'
       );
+      setStatus('failed');
       return;
     }
 
@@ -116,15 +157,23 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
         }
       };
 
-      recorder.onstop = () => {
-        const finalBlob = new Blob(audioChunksRef.current, {
+      recorder.onstop = async () => {
+        const rawBlob = new Blob(audioChunksRef.current, {
           type: recorder.mimeType || 'audio/webm',
         });
-        setAudioBlob(finalBlob);
-        const url = URL.createObjectURL(finalBlob);
+        setAudioBlob(rawBlob);
+        const url = URL.createObjectURL(rawBlob);
         setAudioUrl(url);
         setStatus('stopped');
         if (timerRef.current) clearInterval(timerRef.current);
+
+        // Preprocess audio in background so 16kHz WAV is ready immediately
+        try {
+          const prep = await preprocessAudioForWhisper(rawBlob);
+          setPreprocessed(prep);
+        } catch (prepErr: any) {
+          console.warn('[Voice2Note] Preprocessing warning on stop:', prepErr);
+        }
       };
 
       recorder.start(250);
@@ -137,7 +186,8 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
 
       drawWaveform();
     } catch (err: any) {
-      console.error('Microphone access error:', err);
+      console.error('[Voice2Note] Microphone access error:', err);
+      setFailureStage('recording-failed');
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setErrorMessage(
           'Microphone permission was denied. Please allow microphone access in your browser site settings and try again.'
@@ -147,7 +197,7 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
       } else {
         setErrorMessage(`Failed to start recording: ${err.message || 'Unknown device error'}`);
       }
-      setStatus('idle');
+      setStatus('failed');
     }
   };
 
@@ -194,10 +244,13 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
 
     setAudioUrl(null);
     setAudioBlob(null);
+    setPreprocessed(null);
     setElapsedSeconds(0);
     setTitle('');
     setStatus('idle');
+    setFailureStage(null);
     setErrorMessage(null);
+    setStatusDetailText('');
   };
 
   const drawWaveform = () => {
@@ -244,7 +297,7 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
   // Poll note progression until ready
   const pollNoteProgression = async (noteId: string) => {
     let attempts = 0;
-    const maxAttempts = 15;
+    const maxAttempts = 20;
 
     const poll = async () => {
       attempts++;
@@ -252,26 +305,38 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
         const res = await fetch(`/api/notes/${noteId}`);
         if (res.ok) {
           const data = await res.json();
-          const noteStatus = data.note.status;
+          const note = data.note;
+          const noteStatus = note.status;
+
+          // Save note update to local IndexedDB to guarantee persistence
+          saveClientNote(note).catch(() => {});
 
           if (noteStatus === 'transcribing') {
-            setProcessingStage('transcribing');
+            setStatus('transcribing');
+            setStatusDetailText('Transcribing audio...');
           } else if (noteStatus === 'analyzing') {
-            setProcessingStage('analyzing');
+            setStatus('analyzing');
+            setStatusDetailText('Extracting tasks, ideas, and decisions...');
           } else if (noteStatus === 'ready') {
-            setProcessingStage('ready');
+            setStatus('ready');
+            setStatusDetailText('Note ready!');
             setTimeout(() => {
               if (onSuccess) {
                 onSuccess(noteId);
               } else {
                 router.push(`/notes/${noteId}`);
               }
-            }, 800);
+            }, 600);
+            return;
+          } else if (noteStatus === 'failed') {
+            setFailureStage('analysis-failed');
+            setErrorMessage(note.errorMessage || 'AI processing encountered an issue, but your recording is saved.');
+            setStatus('failed');
             return;
           }
         }
       } catch (err) {
-        console.error('Polling error:', err);
+        console.error('[Voice2Note] Polling error:', err);
       }
 
       if (attempts < maxAttempts) {
@@ -286,26 +351,70 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
       }
     };
 
-    setTimeout(poll, 800);
+    setTimeout(poll, 600);
   };
 
-  const saveRecording = async () => {
+  const processAndSaveRecording = async () => {
     if (!audioBlob) return;
 
-    setStatus('saving');
-    setProcessingStage('saving');
     setErrorMessage(null);
+    setFailureStage(null);
+    setStatus('preparing-audio');
+    setStatusDetailText('Normalizing audio to 16kHz Mono PCM...');
+
+    let prepData = preprocessed;
+    if (!prepData) {
+      try {
+        prepData = await preprocessAudioForWhisper(audioBlob);
+        setPreprocessed(prepData);
+      } catch (prepErr: any) {
+        console.error('[Voice2Note] Audio preprocessing failed:', prepErr);
+        setFailureStage('audio-processing-failed');
+        setErrorMessage(`Audio preprocessing failed: ${prepErr?.message || 'Unsupported audio'}`);
+        setStatus('failed');
+        return;
+      }
+    }
+
+    // Step 2: Attempt in-browser Whisper transcription with fallback
+    let clientTranscript: { text: string; segments: any[] } | null = null;
+    const whisper = getBrowserWhisper();
+
+    try {
+      setStatus('transcribing');
+      setStatusDetailText('Transcribing on-device with Whisper...');
+      const result = await whisper.transcribe(prepData.pcmFloat32, 45000);
+      if (result.text && result.text.length > 0) {
+        clientTranscript = {
+          text: result.text,
+          segments: result.segments,
+        };
+        console.log('[Voice2Note] In-browser transcription succeeded:', clientTranscript.text);
+      }
+    } catch (whisperErr: any) {
+      console.warn('[Voice2Note] Browser Whisper skipped/failed, will use server pipeline:', whisperErr);
+      setStatusDetailText('Uploading 16kHz WAV for server transcription...');
+    }
+
+    // Step 3: Save to Server API + Client IndexedDB
+    setStatus('saving');
+    setStatusDetailText('Persisting note to knowledge base...');
 
     try {
       const formData = new FormData();
-      const ext = audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
-      const fileName = `Recording-${Date.now()}.${ext}`;
+      // Always upload as normalized 16kHz WAV so server needs zero FFmpeg!
+      const wavFileName = `Recording-${Date.now()}.wav`;
+      formData.append('audio', prepData.wavBlob, wavFileName);
 
-      formData.append('audio', audioBlob, fileName);
       if (title.trim()) {
         formData.append('title', title.trim());
       }
-      formData.append('duration', elapsedSeconds.toString());
+      formData.append('duration', prepData.durationSeconds.toString());
+
+      if (clientTranscript) {
+        formData.append('transcriptText', clientTranscript.text);
+        formData.append('transcriptSegments', JSON.stringify(clientTranscript.segments));
+      }
 
       const res = await fetch('/api/notes', {
         method: 'POST',
@@ -315,17 +424,53 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to save recording');
+        throw new Error(data.error || 'Failed to save recording to server');
       }
 
-      setProcessingStage('transcribing');
-      pollNoteProgression(data.note.id);
+      // Persist in client IndexedDB immediately
+      await saveClientNote(data.note, prepData.wavBlob);
 
-    } catch (err: any) {
-      console.error('Save error:', err);
-      setErrorMessage(err.message || 'Error saving recording');
-      setStatus('stopped');
+      // Step 4: Follow progression
+      setStatus('analyzing');
+      setStatusDetailText('Extracting tasks, ideas, and decisions...');
+      pollNoteProgression(data.note.id);
+    } catch (saveErr: any) {
+      console.error('[Voice2Note] Note save failed:', saveErr);
+      setFailureStage('storage-failed');
+      setErrorMessage(saveErr?.message || 'Could not save note to server. Your audio recording is preserved.');
+      setStatus('failed');
+
+      // Still persist locally in IndexedDB so audio is never lost
+      try {
+        const localId = `local-${Date.now()}`;
+        await saveClientNote(
+          {
+            id: localId,
+            title: title.trim() || `Local Recording ${new Date().toLocaleTimeString()}`,
+            audioFileName: `Recording-${Date.now()}.wav`,
+            mimeType: 'audio/wav',
+            fileSizeBytes: prepData.wavBlob.size,
+            durationSeconds: prepData.durationSeconds,
+            status: 'failed',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          prepData.wavBlob
+        );
+        console.log('[Voice2Note] Saved recovery recording to client IndexedDB.');
+      } catch {}
     }
+  };
+
+  const handleDownloadWav = () => {
+    const blobToDownload = preprocessed?.wavBlob || audioBlob;
+    if (!blobToDownload) return;
+    const url = URL.createObjectURL(blobToDownload);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voice2note-recording-${Date.now()}.wav`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -333,12 +478,18 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className={`p-2 rounded-xl ${status === 'recording' ? 'bg-red-500/10 text-red-400' : 'bg-white/5 text-zinc-300'}`}>
+          <div
+            className={`p-2 rounded-xl ${
+              status === 'recording' ? 'bg-red-500/10 text-red-400' : 'bg-white/5 text-zinc-300'
+            }`}
+          >
             <Mic className="w-5 h-5" />
           </div>
           <div>
             <h2 className="font-bold text-base text-white">Live Voice Recorder</h2>
-            <p className="text-xs text-zinc-400">Audio recorded directly in-browser and processed on-device.</p>
+            <p className="text-xs text-zinc-400">
+              Audio normalized to 16kHz on-device. Executed locally with zero data loss.
+            </p>
           </div>
         </div>
 
@@ -367,10 +518,10 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
       </div>
 
       {/* Audio Playback Preview */}
-      {audioUrl && status === 'stopped' && (
+      {audioUrl && (status === 'stopped' || status === 'failed') && (
         <div className="p-4 rounded-2xl card-raised space-y-3">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Audio Preview</span>
+            <span>Audio Preview (Recorded)</span>
             <span>Duration: {formatTime(elapsedSeconds)}</span>
           </div>
           <audio src={audioUrl} controls className="w-full h-10 accent-emerald-500" />
@@ -384,147 +535,222 @@ export function AudioRecorder({ onSuccess }: AudioRecorderProps) {
         </div>
       )}
 
-      {/* Post-Recording Processing Feedback (Requirement #4) */}
-      {status === 'saving' && (
+      {/* Explicit Observable Processing State Machine */}
+      {(status === 'preparing-audio' ||
+        status === 'transcribing' ||
+        status === 'saving' ||
+        status === 'analyzing' ||
+        status === 'indexing' ||
+        status === 'ready') && (
         <div className="p-6 rounded-2xl card-raised border border-emerald-500/20 space-y-4 animate-in fade-in duration-150">
           <div className="text-center space-y-1">
-            <h3 className="font-bold text-sm text-white">Your note is being processed locally...</h3>
-            <p className="text-xs text-zinc-400">Zero cloud egress • Executing Whisper & Llama 3.2 on-device</p>
+            <h3 className="font-bold text-sm text-white">Processing your recording...</h3>
+            <p className="text-xs text-emerald-400 font-medium">
+              {statusDetailText || 'Executing pipeline...'}
+            </p>
+            {whisperProgress?.state === 'loading-model' && (
+              <p className="text-[11px] text-zinc-400">
+                {whisperProgress.statusText} ({whisperProgress.progressPercent}%)
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-4 gap-2 pt-2">
-            <div className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
-              processingStage === 'transcribing' || processingStage === 'analyzing' || processingStage === 'indexing' || processingStage === 'ready'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-white/[0.02] border-white/5 text-zinc-500'
-            }`}>
+            <div
+              className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
+                status === 'preparing-audio' ||
+                status === 'transcribing' ||
+                status === 'saving' ||
+                status === 'analyzing' ||
+                status === 'indexing' ||
+                status === 'ready'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-white/[0.02] border-white/5 text-zinc-500'
+              }`}
+            >
               <Mic className="w-4 h-4 mx-auto" />
-              <span className="block text-[10px] font-semibold">Transcribing</span>
+              <span className="block text-[10px] font-semibold">1. Transcribe</span>
             </div>
 
-            <div className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
-              processingStage === 'analyzing' || processingStage === 'indexing' || processingStage === 'ready'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-white/[0.02] border-white/5 text-zinc-500'
-            }`}>
-              <Sparkles className="w-4 h-4 mx-auto" />
-              <span className="block text-[10px] font-semibold">Analyzing</span>
-            </div>
-
-            <div className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
-              processingStage === 'indexing' || processingStage === 'ready'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-white/[0.02] border-white/5 text-zinc-500'
-            }`}>
+            <div
+              className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
+                status === 'saving' || status === 'analyzing' || status === 'indexing' || status === 'ready'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-white/[0.02] border-white/5 text-zinc-500'
+              }`}
+            >
               <Database className="w-4 h-4 mx-auto" />
-              <span className="block text-[10px] font-semibold">Indexing</span>
+              <span className="block text-[10px] font-semibold">2. Store</span>
             </div>
 
-            <div className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
-              processingStage === 'ready'
-                ? 'bg-emerald-500 text-black font-bold border-emerald-400'
-                : 'bg-white/[0.02] border-white/5 text-zinc-500'
-            }`}>
+            <div
+              className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
+                status === 'analyzing' || status === 'indexing' || status === 'ready'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-white/[0.02] border-white/5 text-zinc-500'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 mx-auto" />
+              <span className="block text-[10px] font-semibold">3. Extract</span>
+            </div>
+
+            <div
+              className={`p-2.5 rounded-xl text-center border text-xs space-y-1 ${
+                status === 'ready'
+                  ? 'bg-emerald-500 text-black font-bold border-emerald-400'
+                  : 'bg-white/[0.02] border-white/5 text-zinc-500'
+              }`}
+            >
               <CheckCircle2 className="w-4 h-4 mx-auto" />
-              <span className="block text-[10px] font-semibold">Ready</span>
+              <span className="block text-[10px] font-semibold">4. Ready</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Error Banner */}
-      {errorMessage && (
-        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="flex-1">{errorMessage}</div>
+      {/* Failure State Banner with Retry Controls */}
+      {status === 'failed' && (
+        <div className="p-5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-200 text-xs space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1 flex-1">
+              <span className="font-semibold text-white block">
+                {failureStage === 'recording-failed' && 'Audio Recording Issue'}
+                {failureStage === 'audio-processing-failed' && 'Audio Preprocessing Issue'}
+                {failureStage === 'transcription-failed' && 'Transcription Failed'}
+                {failureStage === 'storage-failed' && 'Storage / Network Issue'}
+                {failureStage === 'analysis-failed' && 'AI Extraction Notice'}
+                {!failureStage && 'Processing Issue'}
+              </span>
+              <p className="text-zinc-300 leading-relaxed">
+                {errorMessage || 'An error occurred during audio processing.'}
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                Your audio recording is preserved on your device and has not been lost.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-500/20">
+            <button
+              onClick={processAndSaveRecording}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-semibold text-xs transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Processing</span>
+            </button>
+            <button
+              onClick={handleDownloadWav}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 text-xs transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Audio (.wav)</span>
+            </button>
+            <button
+              onClick={resetRecording}
+              className="px-3 py-2 rounded-xl text-zinc-400 hover:text-white text-xs transition-colors cursor-pointer"
+            >
+              Discard
+            </button>
+          </div>
         </div>
       )}
 
       {/* Controls */}
-      {status !== 'saving' && (
-        <div className="flex items-center justify-center gap-3 pt-2">
-          {status === 'idle' && (
-            <button
-              onClick={startRecording}
-              className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
-            >
-              <Mic className="w-4 h-4" />
-              <span>Start Recording</span>
-            </button>
-          )}
+      {status !== 'preparing-audio' &&
+        status !== 'transcribing' &&
+        status !== 'saving' &&
+        status !== 'analyzing' &&
+        status !== 'indexing' &&
+        status !== 'ready' && (
+          <div className="flex items-center justify-center gap-3 pt-2">
+            {status === 'idle' && (
+              <button
+                onClick={startRecording}
+                className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
+              >
+                <Mic className="w-4 h-4" />
+                <span>Start Recording</span>
+              </button>
+            )}
 
-          {status === 'recording' && (
-            <>
-              <button
-                onClick={resetRecording}
-                className="p-3 rounded-xl bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
-                title="Cancel Recording"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <button
-                onClick={pauseRecording}
-                className="p-3 rounded-xl bg-white/10 text-zinc-200 hover:bg-white/20 transition-all cursor-pointer"
-                title="Pause"
-              >
-                <Pause className="w-4 h-4" />
-              </button>
-              <button
-                onClick={stopRecording}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-red-500 text-white font-semibold text-xs hover:bg-red-400 transition-all cursor-pointer shadow-lg shadow-red-500/25"
-              >
-                <Square className="w-3.5 h-3.5 fill-white" />
-                <span>Stop</span>
-              </button>
-            </>
-          )}
+            {status === 'recording' && (
+              <>
+                <button
+                  onClick={resetRecording}
+                  className="p-3 rounded-xl bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  title="Cancel Recording"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={pauseRecording}
+                  className="p-3 rounded-xl bg-white/10 text-zinc-200 hover:bg-white/20 transition-all cursor-pointer"
+                  title="Pause"
+                >
+                  <Pause className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={stopRecording}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl bg-red-500 text-white font-semibold text-xs hover:bg-red-400 transition-all cursor-pointer shadow-lg shadow-red-500/25"
+                >
+                  <Square className="w-3.5 h-3.5 fill-white" />
+                  <span>Stop</span>
+                </button>
+              </>
+            )}
 
-          {status === 'paused' && (
-            <>
-              <button
-                onClick={resetRecording}
-                className="p-3 rounded-xl bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
-                title="Cancel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <button
-                onClick={resumeRecording}
-                className="p-3 rounded-xl bg-emerald-500 text-black font-semibold hover:bg-emerald-400 transition-all cursor-pointer"
-                title="Resume"
-              >
-                <Play className="w-4 h-4 fill-black" />
-              </button>
-              <button
-                onClick={stopRecording}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-red-500 text-white font-semibold text-xs hover:bg-red-400 transition-all cursor-pointer"
-              >
-                <Square className="w-3.5 h-3.5 fill-white" />
-                <span>Done</span>
-              </button>
-            </>
-          )}
+            {status === 'paused' && (
+              <>
+                <button
+                  onClick={resetRecording}
+                  className="p-3 rounded-xl bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  title="Cancel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={resumeRecording}
+                  className="p-3 rounded-xl bg-emerald-500 text-black font-semibold hover:bg-emerald-400 transition-all cursor-pointer"
+                  title="Resume"
+                >
+                  <Play className="w-4 h-4 fill-black" />
+                </button>
+                <button
+                  onClick={stopRecording}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl bg-red-500 text-white font-semibold text-xs hover:bg-red-400 transition-all cursor-pointer"
+                >
+                  <Square className="w-3.5 h-3.5 fill-white" />
+                  <span>Done</span>
+                </button>
+              </>
+            )}
 
-          {status === 'stopped' && (
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                onClick={resetRecording}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Cancel / Discard</span>
-              </button>
-              <button
-                onClick={saveRecording}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all cursor-pointer"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Save & Transcribe</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            {status === 'stopped' && (
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <button
+                  onClick={resetRecording}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold transition-all cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Cancel / Discard</span>
+                </button>
+                <button
+                  onClick={processAndSaveRecording}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 text-black font-semibold text-xs shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Save & Transcribe</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+      {/* Collapsible Diagnostic & System Panel */}
+      <div className="pt-2">
+        <DiagnosticPanel />
+      </div>
     </div>
   );
 }

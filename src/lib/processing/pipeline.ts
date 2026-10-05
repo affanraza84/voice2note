@@ -43,42 +43,50 @@ export async function processVoiceNote(noteId: string): Promise<void> {
   activeJobs.add(noteId);
 
   try {
-    // ---------------------------------------------------------
-    // 1. Locate audio file via storage abstraction
-    // ---------------------------------------------------------
-    const storage = getAudioStorage();
-    const processingFile = await storage.getFilePathForProcessing(note.id, note.audioFileName);
+    let savedTranscript = note.transcript;
+    let finalDuration = note.durationSeconds;
 
-    let result;
-    try {
+    if (!savedTranscript) {
       // ---------------------------------------------------------
-      // 2. Transcription Stage
+      // 1. Locate audio file via storage abstraction
       // ---------------------------------------------------------
-      updateVoiceNoteStatus(noteId, 'transcribing');
+      const storage = getAudioStorage();
+      const processingFile = await storage.getFilePathForProcessing(note.id, note.audioFileName);
 
-      const speechProvider = getSpeechProvider();
-      result = await speechProvider.transcribe({
-        filePath: processingFile.filePath,
-        mimeType: note.mimeType,
-        durationSeconds: note.durationSeconds,
+      let result;
+      try {
+        // ---------------------------------------------------------
+        // 2. Transcription Stage
+        // ---------------------------------------------------------
+        updateVoiceNoteStatus(noteId, 'transcribing');
+
+        const speechProvider = getSpeechProvider();
+        result = await speechProvider.transcribe({
+          filePath: processingFile.filePath,
+          mimeType: note.mimeType,
+          durationSeconds: note.durationSeconds,
+        });
+      } finally {
+        // Ephemeral cleanup for downloaded temporary audio
+        await processingFile.cleanup();
+      }
+
+      const transcriptId = crypto.randomUUID();
+      savedTranscript = saveTranscript({
+        id: transcriptId,
+        voiceNoteId: noteId,
+        rawText: result.text || '(No audible speech detected in recording)',
+        segments: result.segments,
+        detectedLanguage: result.language,
+        modelUsed: result.modelUsed,
+        processingTimeMs: result.processingTimeMs,
       });
-    } finally {
-      // Ephemeral cleanup for downloaded temporary audio
-      await processingFile.cleanup();
+
+      if (result.duration > 0) {
+        finalDuration = result.duration;
+      }
     }
 
-    const transcriptId = crypto.randomUUID();
-    const savedTranscript = saveTranscript({
-      id: transcriptId,
-      voiceNoteId: noteId,
-      rawText: result.text || '(No audible speech detected in recording)',
-      segments: result.segments,
-      detectedLanguage: result.language,
-      modelUsed: result.modelUsed,
-      processingTimeMs: result.processingTimeMs,
-    });
-
-    const finalDuration = result.duration > 0 ? result.duration : note.durationSeconds;
     updateVoiceNoteStatus(noteId, 'analyzing', null, finalDuration);
 
     // ---------------------------------------------------------

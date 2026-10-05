@@ -6,6 +6,8 @@ import { VoiceNote } from '@/types';
 import { NoteCard } from '@/components/notes/NoteCard';
 import { Mic, Search, RefreshCw } from 'lucide-react';
 
+import { getClientNotes } from '@/lib/storage/client-db';
+
 export default function NotesListPage() {
   const [notes, setNotes] = useState<VoiceNote[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -15,11 +17,35 @@ export default function NotesListPage() {
 
   const fetchNotes = async () => {
     try {
-      const res = await fetch('/api/notes?limit=100');
-      if (res.ok) {
-        const data = await res.json();
-        setNotes(data.notes || []);
+      let serverNotes: VoiceNote[] = [];
+      try {
+        const res = await fetch('/api/notes?limit=100');
+        if (res.ok) {
+          const data = await res.json();
+          serverNotes = data.notes || [];
+        }
+      } catch (err) {
+        console.warn('[Voice2Note] Server notes fetch error, reading client storage:', err);
       }
+
+      const clientNotes = await getClientNotes();
+
+      // Merge and deduplicate by note ID
+      const map = new Map<string, VoiceNote>();
+      for (const n of serverNotes) {
+        map.set(n.id, n);
+      }
+      for (const n of clientNotes) {
+        const existing = map.get(n.id);
+        if (!existing || n.status === 'ready' || !existing.transcript) {
+          map.set(n.id, { ...existing, ...n });
+        }
+      }
+
+      const combined = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setNotes(combined);
     } catch (err) {
       console.error('Failed to fetch notes:', err);
     } finally {

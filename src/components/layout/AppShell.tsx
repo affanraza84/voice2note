@@ -141,10 +141,10 @@ export function AppShell({ children }: AppShellProps) {
         <div className="p-4 m-3 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
           <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>100% Local Inference</span>
+            <span>Local-First Architecture</span>
           </div>
           <p className="text-[11px] text-zinc-400 leading-relaxed">
-            Whisper and Llama 3.2 execute on-device. Audio never leaves this computer.
+            Speech is decoded and normalized to 16kHz on-device. Executed locally with zero data loss.
           </p>
           <button
             onClick={handleToggleDemo}

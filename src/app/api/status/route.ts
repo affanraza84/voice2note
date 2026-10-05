@@ -20,18 +20,29 @@ export async function GET() {
   const activeJobs = getActiveJobCount();
   const dbStats = getStats();
 
+  const isServerless = Boolean(
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
+  );
+
   let statusType: LocalAIStatus['status'] = 'ready';
-  let label = 'AI Ready';
+  let label = 'Local AI Ready';
 
   if (activeJobs > 0) {
     statusType = 'processing';
     label = `Processing (${activeJobs} active)`;
   } else if (!isSpeechReady) {
-    label = `${speech.name} Initializing`;
+    statusType = 'starting';
+    label = `${speech.name} Standby`;
   } else if (!isLlmOnline) {
-    label = `${speech.name} Ready (LLM Offline)`;
+    statusType = 'ready';
+    label = isServerless 
+      ? 'Local Speech Ready (Cloud LLM Standby)' 
+      : 'Local Speech Ready (Ollama Offline)';
   } else {
-    label = `${speech.name} & ${llm.name} Ready`;
+    statusType = 'ready';
+    label = `${speech.name} Ready`;
   }
 
   const status: LocalAIStatus = {

@@ -23,6 +23,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+import { getClientNote } from '@/lib/storage/client-db';
+
 export default function NoteDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -47,11 +49,27 @@ export default function NoteDetailPage() {
         if (!isEditingTitle) {
           setTitleInput(data.note.title);
         }
-      } else if (res.status === 404) {
-        setNote(null);
+      } else {
+        // Fallback to client IndexedDB storage if server returned 404 (e.g. serverless cold start)
+        const localNote = await getClientNote(id);
+        if (localNote) {
+          setNote(localNote);
+          if (!isEditingTitle) {
+            setTitleInput(localNote.title);
+          }
+        } else {
+          setNote(null);
+        }
       }
     } catch (err) {
-      console.error('Failed to load note:', err);
+      console.warn('[Voice2Note] Note fetch warning, checking client storage:', err);
+      const localNote = await getClientNote(id);
+      if (localNote) {
+        setNote(localNote);
+        if (!isEditingTitle) {
+          setTitleInput(localNote.title);
+        }
+      }
     } finally {
       setLoading(false);
     }

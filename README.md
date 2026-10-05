@@ -6,8 +6,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16.3-black.svg)](https://nextjs.org/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-38bdf8.svg)](https://tailwindcss.com/)
-[![Local AI](https://img.shields.io/badge/Local_AI-100%25_On--Device-emerald.svg)](#privacy)
-[![Tests](https://img.shields.io/badge/Tests-37%2F37_Passing-brightgreen.svg)](#evaluation)
+[![Local AI](https://img.shields.io/badge/Local_AI-On--Device_Whisper-emerald.svg)](#privacy)
+[![Tests](https://img.shields.io/badge/Tests-43%2F43_Passing-brightgreen.svg)](#evaluation)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
 ---

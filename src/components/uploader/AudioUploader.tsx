@@ -2,7 +2,9 @@
 
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { UploadCloud, FileAudio, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, FileAudio, AlertCircle, Loader2, CheckCircle2, RefreshCw } from 'lucide-react';
+import { preprocessAudioForWhisper } from '@/lib/audio/browser-audio';
+import { saveClientNote } from '@/lib/storage/client-db';
 
 interface AudioUploaderProps {
   onSuccess?: (noteId: string) => void;
@@ -16,6 +18,7 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const supportedExtensions = ['.webm', '.wav', '.mp3', '.m4a', '.mp4', '.aac', '.ogg', '.flac'];
@@ -68,12 +71,32 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
 
     setUploading(true);
     setErrorMessage(null);
+    setProcessingStatus('Decoding & converting to 16kHz WAV...');
 
     try {
+      // 1. Browser-side normalization: convert to 16kHz WAV so server needs zero FFmpeg
+      let uploadBlob: Blob = selectedFile;
+      let uploadFileName = selectedFile.name;
+      let durationSeconds = 0;
+
+      try {
+        const preprocessed = await preprocessAudioForWhisper(selectedFile);
+        uploadBlob = preprocessed.wavBlob;
+        uploadFileName = `${selectedFile.name.replace(/\.[^/.]+$/, '')}-16k.wav`;
+        durationSeconds = preprocessed.durationSeconds;
+      } catch (prepErr) {
+        console.warn('[Voice2Note] Audio preprocessing warning, using raw file:', prepErr);
+      }
+
+      setProcessingStatus('Uploading to knowledge base...');
+
       const formData = new FormData();
-      formData.append('audio', selectedFile);
+      formData.append('audio', uploadBlob, uploadFileName);
       if (title.trim()) {
         formData.append('title', title.trim());
+      }
+      if (durationSeconds > 0) {
+        formData.append('duration', durationSeconds.toString());
       }
 
       const res = await fetch('/api/notes', {
@@ -87,15 +110,19 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
         throw new Error(data.error || 'Failed to upload audio');
       }
 
+      // Persist in client IndexedDB
+      await saveClientNote(data.note, uploadBlob);
+
       if (onSuccess) {
         onSuccess(data.note.id);
       } else {
         router.push(`/notes/${data.note.id}`);
       }
     } catch (err: any) {
-      console.error('Upload error:', err);
-      setErrorMessage(err.message || 'Upload failed');
+      console.error('[Voice2Note] Upload error:', err);
+      setErrorMessage(err?.message || 'Upload failed. Please retry.');
       setUploading(false);
+      setProcessingStatus('');
     }
   };
 
@@ -107,7 +134,7 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
         </div>
         <div>
           <h3 className="font-semibold text-lg text-white">Upload Audio File</h3>
-          <p className="text-xs text-zinc-400">Import existing voice memos from phone or computer.</p>
+          <p className="text-xs text-zinc-400">Audio converted to 16kHz on-device. Zero FFmpeg dependencies.</p>
         </div>
       </div>
 
@@ -179,7 +206,7 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
             {uploading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Uploading & Triggering Local Transcription...</span>
+                <span>{processingStatus || 'Processing Audio...'}</span>
               </>
             ) : (
               <>
@@ -191,11 +218,20 @@ export function AudioUploader({ onSuccess }: AudioUploaderProps) {
         </div>
       )}
 
-      {/* Error Message */}
+      {/* Error Message with Retry */}
       {errorMessage && (
         <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="flex-1">{errorMessage}</div>
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+          <div className="flex-1 space-y-1">
+            <p>{errorMessage}</p>
+            <button
+              onClick={uploadFile}
+              className="flex items-center gap-1 text-emerald-400 font-medium hover:underline cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Retry upload</span>
+            </button>
+          </div>
         </div>
       )}
     </div>

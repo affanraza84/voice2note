@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server';
-import { listVoiceNotes, createVoiceNote, getStats } from '@/lib/db';
+import { listVoiceNotes, createVoiceNote, saveTranscript, getStats } from '@/lib/db';
 import { validateAudioFile, saveAudioBuffer } from '@/lib/storage/audio';
 import { processVoiceNote } from '@/lib/processing/pipeline';
 import { NoteStatus } from '@/types';
@@ -90,6 +90,25 @@ export async function POST(request: NextRequest) {
       durationSeconds,
       status: 'processing',
     });
+
+    const transcriptText = formData.get('transcriptText') as string | null;
+    const transcriptSegmentsJson = formData.get('transcriptSegments') as string | null;
+
+    if (transcriptText && transcriptText.trim()) {
+      let segments = [];
+      try {
+        if (transcriptSegmentsJson) segments = JSON.parse(transcriptSegmentsJson);
+      } catch {}
+
+      saveTranscript({
+        id: crypto.randomUUID(),
+        voiceNoteId: note.id,
+        rawText: transcriptText.trim(),
+        segments,
+        modelUsed: 'Browser Whisper (ONNX / WebGPU / WASM)',
+        processingTimeMs: 0,
+      });
+    }
 
     // 4. Trigger processing pipeline asynchronously (using after() to prevent serverless freeze)
     if (typeof after === 'function') {

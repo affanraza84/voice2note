@@ -31,7 +31,8 @@ export class LocalSpeechProvider implements SpeechProvider {
 
   async isReady(): Promise<boolean> {
     try {
-      await this.getTranscriber();
+      // Lightweight verification that the ONNX transformers engine is loadable
+      await import('@xenova/transformers');
       return true;
     } catch (err) {
       console.error('LocalSpeechProvider isReady failed:', err);

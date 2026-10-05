@@ -1,8 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { listVoiceNotes, createVoiceNote, getStats } from '@/lib/db';
 import { validateAudioFile, saveAudioBuffer } from '@/lib/storage/audio';
 import { processVoiceNote } from '@/lib/processing/pipeline';
 import { NoteStatus } from '@/types';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,12 +91,22 @@ export async function POST(request: NextRequest) {
       status: 'processing',
     });
 
-    // 4. Trigger processing pipeline asynchronously (don't block HTTP response)
-    queueMicrotask(() => {
-      processVoiceNote(note.id).catch((err) => {
-        console.error(`Background processing failed for note ${note.id}:`, err);
+    // 4. Trigger processing pipeline asynchronously (using after() to prevent serverless freeze)
+    if (typeof after === 'function') {
+      after(async () => {
+        try {
+          await processVoiceNote(note.id);
+        } catch (err) {
+          console.error(`Background processing failed for note ${note.id}:`, err);
+        }
       });
-    });
+    } else {
+      queueMicrotask(() => {
+        processVoiceNote(note.id).catch((err) => {
+          console.error(`Background processing failed for note ${note.id}:`, err);
+        });
+      });
+    }
 
     return NextResponse.json({
       note,

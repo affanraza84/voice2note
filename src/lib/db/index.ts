@@ -3,20 +3,52 @@ import path from 'path';
 import fs from 'fs';
 import { VoiceNote, Transcript, NoteStatus, Extraction, TaskItem, VectorChunk } from '@/types';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DATA_DIR, 'voice2note.db');
+export function getDatabaseConfig(): { dataDir: string; dbPath: string; isEphemeral: boolean } {
+  if (process.env.SQLITE_DB_PATH) {
+    const customPath = process.env.SQLITE_DB_PATH;
+    return { dataDir: path.dirname(customPath), dbPath: customPath, isEphemeral: false };
+  }
+
+  const isServerless = Boolean(
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
+  );
+
+  if (isServerless) {
+    const serverlessDir = path.join('/tmp', 'voice2note-data');
+    return {
+      dataDir: serverlessDir,
+      dbPath: path.join(serverlessDir, 'voice2note.db'),
+      isEphemeral: true,
+    };
+  }
+
+  const localDir = path.join(process.cwd(), 'data');
+  return {
+    dataDir: localDir,
+    dbPath: path.join(localDir, 'voice2note.db'),
+    isEphemeral: false,
+  };
+}
 
 let dbInstance: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
 
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  const { dataDir, dbPath } = getDatabaseConfig();
+
+  if (!fs.existsSync(/*turbopackIgnore: true*/ dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
+  const db = new Database(dbPath);
+  try {
+    db.pragma('journal_mode = WAL');
+  } catch {
+    db.pragma('journal_mode = DELETE');
+  }
   db.pragma('foreign_keys = ON');
 
   // Initialize schema

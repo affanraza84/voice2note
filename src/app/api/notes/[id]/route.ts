@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getVoiceNote, deleteVoiceNote, updateVoiceNoteTitle } from '@/lib/db';
 import { deleteAudioFiles } from '@/lib/storage/audio';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

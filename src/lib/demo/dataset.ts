@@ -299,6 +299,9 @@ export const DEMO_NOTES: DemoNoteSpec[] = [
 ];
 
 export async function loadDemoDataset(): Promise<{ loaded: number }> {
+  // Clear any existing demo notes to prevent UNIQUE constraint errors
+  clearDemoDataset();
+
   const embedder = getEmbeddingProvider();
   const db = getDb();
 

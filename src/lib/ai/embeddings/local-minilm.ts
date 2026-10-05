@@ -11,7 +11,15 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   private async getEmbedder() {
     if (!this.pipelinePromise) {
       this.pipelinePromise = (async () => {
-        const { pipeline } = await import('@xenova/transformers');
+        const { pipeline, env } = await import('@xenova/transformers');
+        const isServerless = Boolean(
+          process.env.VERCEL ||
+          process.env.AWS_LAMBDA_FUNCTION_NAME ||
+          (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
+        );
+        if (isServerless) {
+          env.cacheDir = '/tmp/transformers-cache';
+        }
         return pipeline('feature-extraction', this.model, {
           quantized: true,
         });

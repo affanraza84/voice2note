@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryNotesRAG } from '@/lib/rag/engine';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

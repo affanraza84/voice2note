@@ -1,5 +1,3 @@
-import path from 'path';
-import fs from 'fs';
 import {
   getVoiceNote,
   updateVoiceNoteStatus,
@@ -10,7 +8,7 @@ import {
   deleteEmbeddingChunksForNote,
   getSetting,
 } from '@/lib/db';
-import { AUDIO_STORAGE_DIR } from '@/lib/storage/audio';
+import { getAudioStorage } from '@/lib/storage';
 import { getSpeechProvider } from '@/lib/ai/speech/provider';
 import { getLLMProvider } from '@/lib/ai/llm/provider';
 import { getEmbeddingProvider } from '@/lib/ai/embeddings/provider';
@@ -46,27 +44,28 @@ export async function processVoiceNote(noteId: string): Promise<void> {
 
   try {
     // ---------------------------------------------------------
-    // 1. Locate audio file
+    // 1. Locate audio file via storage abstraction
     // ---------------------------------------------------------
-    const audioPath = path.join(AUDIO_STORAGE_DIR, note.audioFileName);
-    const normalizedWavPath = path.join(AUDIO_STORAGE_DIR, `${note.id}_16k.wav`);
-    const targetPath = fs.existsSync(normalizedWavPath) ? normalizedWavPath : audioPath;
+    const storage = getAudioStorage();
+    const processingFile = await storage.getFilePathForProcessing(note.id, note.audioFileName);
 
-    if (!fs.existsSync(targetPath)) {
-      throw new Error(`Audio file does not exist on disk: ${note.audioFileName}`);
+    let result;
+    try {
+      // ---------------------------------------------------------
+      // 2. Transcription Stage
+      // ---------------------------------------------------------
+      updateVoiceNoteStatus(noteId, 'transcribing');
+
+      const speechProvider = getSpeechProvider();
+      result = await speechProvider.transcribe({
+        filePath: processingFile.filePath,
+        mimeType: note.mimeType,
+        durationSeconds: note.durationSeconds,
+      });
+    } finally {
+      // Ephemeral cleanup for downloaded temporary audio
+      await processingFile.cleanup();
     }
-
-    // ---------------------------------------------------------
-    // 2. Transcription Stage
-    // ---------------------------------------------------------
-    updateVoiceNoteStatus(noteId, 'transcribing');
-
-    const speechProvider = getSpeechProvider();
-    const result = await speechProvider.transcribe({
-      filePath: targetPath,
-      mimeType: note.mimeType,
-      durationSeconds: note.durationSeconds,
-    });
 
     const transcriptId = crypto.randomUUID();
     const savedTranscript = saveTranscript({

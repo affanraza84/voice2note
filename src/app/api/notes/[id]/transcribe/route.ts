@@ -1,6 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { getVoiceNote, updateVoiceNoteStatus } from '@/lib/db';
 import { processVoiceNote, isJobActive } from '@/lib/processing/pipeline';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -21,12 +25,22 @@ export async function POST(
     // Reset status to processing
     updateVoiceNoteStatus(id, 'processing');
 
-    // Trigger processing
-    queueMicrotask(() => {
-      processVoiceNote(id).catch((err) => {
-        console.error(`Retry processing failed for ${id}:`, err);
+    // Trigger processing safely for serverless environments
+    if (typeof after === 'function') {
+      after(async () => {
+        try {
+          await processVoiceNote(id);
+        } catch (err) {
+          console.error(`Retry processing failed for ${id}:`, err);
+        }
       });
-    });
+    } else {
+      queueMicrotask(() => {
+        processVoiceNote(id).catch((err) => {
+          console.error(`Retry processing failed for ${id}:`, err);
+        });
+      });
+    }
 
     return NextResponse.json({ message: 'Transcription triggered successfully' });
   } catch (error: any) {

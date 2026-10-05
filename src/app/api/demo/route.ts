@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadDemoDataset, clearDemoDataset, isDemoModeActive, DEMO_NOTES } from '@/lib/demo/dataset';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET() {
   const isDemoActive = isDemoModeActive();
   return NextResponse.json({

@@ -7,7 +7,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16.3-black.svg)](https://nextjs.org/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-38bdf8.svg)](https://tailwindcss.com/)
 [![Local AI](https://img.shields.io/badge/Local_AI-100%25_On--Device-emerald.svg)](#privacy)
-[![Tests](https://img.shields.io/badge/Tests-30%2F30_Passing-brightgreen.svg)](#evaluation)
+[![Tests](https://img.shields.io/badge/Tests-37%2F37_Passing-brightgreen.svg)](#evaluation)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
 ---
@@ -218,6 +218,26 @@ npm run dev
 ```
 Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
+*For detailed local development notes, see [`docs/local-development.md`](docs/local-development.md).*
+
+---
+
+## Operating Modes
+
+Voice2Note features a unified codebase with clean provider abstractions supporting two execution models:
+
+| Dimension | Local Development Mode (Default) | Production Serverless Mode (e.g. Vercel) |
+|---|---|---|
+| **Audio Storage** | Local Disk (`./data/audio`) | Vercel Blob Object Storage (`BLOB_READ_WRITE_TOKEN`) |
+| **Audio Temp Processing** | Local Disk | Download to `/tmp` → Transcribe → Automated Cleanup |
+| **Database** | SQLite (`./data/voice2note.db`) | SQLite in `/tmp` or persistent volume (`SQLITE_DB_PATH`) |
+| **Speech-to-Text** | Local Whisper ONNX (`whisper-tiny.en`) | Remote Whisper (`whisper-large-v3-turbo` via Groq) or ONNX |
+| **LLM Inference** | Local Ollama (`llama3.2` at `127.0.0.1:11434`) | Remote OpenAI/Groq Compatible API (`AI_API_KEY`) |
+| **Embeddings** | In-Process MiniLM (`all-MiniLM-L6-v2`) | In-Process MiniLM (`env.cacheDir = '/tmp/transformers-cache'`) |
+| **Health Check** | `/api/health` | `/api/health` |
+
+*For complete production architecture and deployment steps, see [`docs/production-deployment.md`](docs/production-deployment.md).*
+
 ---
 
 ## Models
@@ -226,8 +246,10 @@ All models employed in Voice2Note are open-weight with transparent commercial/co
 
 | Model Role | Model Identifier | Parameters / Dim | Runtime | License |
 |---|---|---|---|---|
-| **Speech-to-Text** | `Xenova/whisper-tiny.en` | 39M parameters | ONNX Runtime (`onnxruntime-node`) | MIT License |
+| **Speech-to-Text (Local)** | `Xenova/whisper-tiny.en` | 39M parameters | ONNX Runtime (`onnxruntime-node`) | MIT License |
+| **Speech-to-Text (Cloud)** | `whisper-large-v3-turbo` | Large | Groq / OpenAI Compatible API | Open-Weights |
 | **Local LLM** | `llama3.2:latest` | 3.21B parameters | Ollama Daemon | Meta Llama Community License |
+| **Cloud LLM (Optional)** | `llama-3.3-70b-versatile` | 70B parameters | Groq Cloud Endpoint | Meta Llama Community License |
 | **Embeddings** | `Xenova/all-MiniLM-L6-v2` | 384 dimensions | ONNX Runtime | Apache 2.0 |
 | **Vector Search** | SQLite Float32 Cosine | Native C/Float32 | In-Process SQLite | Public Domain |
 
@@ -235,7 +257,7 @@ All models employed in Voice2Note are open-weight with transparent commercial/co
 
 ## Privacy
 
-Voice2Note is designed around **zero data egress**:
+Voice2Note is designed around **zero data egress** in Local Mode:
 - Audio files are stored locally in `data/audio/`.
 - SQLite database resides locally in `data/voice2note.db`.
 - No user audio, transcripts, or queries are ever transmitted over the internet.
@@ -247,21 +269,22 @@ Voice2Note is designed around **zero data egress**:
 
 ## Evaluation
 
-Our formal evaluation suite ([`docs/evaluation.md`](docs/evaluation.md)) measures real accuracy and latency:
+Our formal evaluation suite ([`docs/evaluation.md`](docs/evaluation.md)) measures real accuracy, storage safety, and latency:
 
 ```bash
 npx vitest run
 ```
 
 ```text
- ✓ tests/audio-validation.test.ts (6 tests)
  ✓ tests/note-creation-and-db.test.ts (4 tests)
+ ✓ tests/audio-validation.test.ts (6 tests)
+ ✓ tests/storage-abstraction.test.ts (7 tests)
  ✓ tests/speech-provider.test.ts (3 tests)
  ✓ tests/security-and-demo.test.ts (11 tests)
  ✓ tests/evaluation.test.ts (6 tests)
 
- Test Files  5 passed (5)
-      Tests  30 passed (30)
+ Test Files  6 passed (6)
+      Tests  37 passed (37)
 ```
 
 - **Speech-to-Text Latency**: 1.2s for 15s audio (0.08x real-time factor, ~12x real-time speed).

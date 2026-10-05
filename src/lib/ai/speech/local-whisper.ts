@@ -12,7 +12,15 @@ export class LocalSpeechProvider implements SpeechProvider {
   private async getTranscriber() {
     if (!this.transcriberPromise) {
       this.transcriberPromise = (async () => {
-        const { pipeline } = await import('@xenova/transformers');
+        const { pipeline, env } = await import('@xenova/transformers');
+        const isServerless = Boolean(
+          process.env.VERCEL ||
+          process.env.AWS_LAMBDA_FUNCTION_NAME ||
+          (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
+        );
+        if (isServerless) {
+          env.cacheDir = '/tmp/transformers-cache';
+        }
         return pipeline('automatic-speech-recognition', this.model, {
           quantized: true,
         });
@@ -48,7 +56,9 @@ export class LocalSpeechProvider implements SpeechProvider {
         await transcodeTo16kHzWav(audio.filePath, wavPath);
         tempWavCreated = true;
       } catch (err: any) {
-        throw new Error(`Failed to convert audio to 16kHz WAV format: ${err?.message || err}`);
+        throw new Error(
+          `Local audio conversion requires FFmpeg on your system (${err?.message || err}). In serverless/production deployments without FFmpeg, configure GROQ_API_KEY or AI_API_KEY to use remote speech recognition, or upload 16kHz WAV files.`
+        );
       }
     }
 

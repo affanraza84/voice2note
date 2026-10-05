@@ -1,48 +1,47 @@
 import { NextResponse } from 'next/server';
 import { getActiveJobCount } from '@/lib/processing/pipeline';
 import { getStats, getSetting } from '@/lib/db';
+import { getLLMProvider } from '@/lib/ai/llm/provider';
+import { getSpeechProvider } from '@/lib/ai/speech/provider';
+import { getAudioStorage } from '@/lib/storage';
 import { LocalAIStatus } from '@/types';
 
-export async function GET() {
-  let ollamaOnline = false;
-  let ollamaModels: string[] = [];
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-  try {
-    const res = await fetch('http://127.0.0.1:11434/api/tags', {
-      method: 'GET',
-      signal: AbortSignal.timeout(1500),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      ollamaOnline = true;
-      ollamaModels = (data.models || []).map((m: any) => m.name);
-    }
-  } catch {
-    ollamaOnline = false;
-  }
+export async function GET() {
+  const llm = getLLMProvider();
+  const speech = getSpeechProvider();
+  const storage = getAudioStorage();
+
+  const isLlmOnline = await llm.isReady();
+  const isSpeechReady = await speech.isReady();
 
   const activeJobs = getActiveJobCount();
   const dbStats = getStats();
 
   let statusType: LocalAIStatus['status'] = 'ready';
-  let label = 'Local AI Ready';
+  let label = 'AI Ready';
 
   if (activeJobs > 0) {
     statusType = 'processing';
-    label = `Processing Locally (${activeJobs} active)`;
-  } else if (!ollamaOnline) {
-    // Whisper is ready locally, but LLM is offline
-    label = 'Local Speech Ready (Ollama Offline)';
+    label = `Processing (${activeJobs} active)`;
+  } else if (!isSpeechReady) {
+    label = `${speech.name} Initializing`;
+  } else if (!isLlmOnline) {
+    label = `${speech.name} Ready (LLM Offline)`;
+  } else {
+    label = `${speech.name} & ${llm.name} Ready`;
   }
 
   const status: LocalAIStatus = {
     status: statusType,
     label,
     details: {
-      speechModel: 'Xenova/whisper-tiny.en',
-      speechEngine: 'Local ONNX (Transformers.js)',
-      llmModel: ollamaModels.find((m) => m.includes('llama3.2')) || ollamaModels[0] || 'llama3.2:latest',
-      ollamaOnline,
+      speechModel: speech.model,
+      speechEngine: speech.name,
+      llmModel: llm.model,
+      ollamaOnline: isLlmOnline,
       activeJobs,
     },
   };
@@ -61,6 +60,10 @@ export async function GET() {
 
   return NextResponse.json({
     status,
+    storage: {
+      provider: storage.name,
+      id: storage.id,
+    },
     dbStats,
     friendPersona,
     timestamp: new Date().toISOString(),

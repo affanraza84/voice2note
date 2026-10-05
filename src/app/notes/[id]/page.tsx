@@ -347,7 +347,7 @@ export default function NoteDetailPage() {
               <span className="font-mono text-[10px] text-amber-400/80">Local ONNX Engine</span>
             </div>
 
-            {processingSeconds > 20 && (
+            {processingSeconds > 20 && processingSeconds <= 45 && (
               <div className="flex items-center justify-between text-[11px] text-amber-400/90 pt-1.5 border-t border-amber-500/15">
                 <span>Still processing locally... Longer recordings and initial model compilation may take extra time.</span>
                 <button
@@ -356,6 +356,20 @@ export default function NoteDetailPage() {
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium transition cursor-pointer shrink-0 ml-3"
                 >
                   <RefreshCw className={`w-3 h-3 ${retranscribing ? 'animate-spin' : ''}`} />
+                  <span>{retranscribing ? 'Retrying...' : 'Retry Processing'}</span>
+                </button>
+              </div>
+            )}
+
+            {processingSeconds > 45 && (
+              <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/30 text-[11px] text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <span>Processing is taking longer than expected. Click &quot;Retry Processing&quot; to transcribe immediately on-device with local Whisper.</span>
+                <button
+                  onClick={handleRetryTranscription}
+                  disabled={retranscribing}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 text-black font-semibold hover:bg-amber-400 transition cursor-pointer shrink-0 self-start sm:self-auto"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${retranscribing ? 'animate-spin' : ''}`} />
                   <span>{retranscribing ? 'Retrying...' : 'Retry Processing'}</span>
                 </button>
               </div>

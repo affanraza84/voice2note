@@ -233,6 +233,17 @@ class BrowserWhisperEngine {
   }> {
     const tTotalStart = performance.now();
 
+    if (!pcmFloat32 || pcmFloat32.length === 0) {
+      throw new Error('Audio PCM Float32Array is empty or invalid.');
+    }
+
+    console.log('[Voice2Note] transcription input:', {
+      type: typeof pcmFloat32,
+      constructor: pcmFloat32?.constructor?.name,
+      length: pcmFloat32?.length,
+      durationSeconds: (pcmFloat32.length / 16000).toFixed(2),
+    });
+
     // Ensure model is ready
     let modelLoadMs = 0;
     if (this.state !== 'ready' || !this.pipelineInstance) {
@@ -277,8 +288,19 @@ class BrowserWhisperEngine {
       const inferenceMs = Math.round(performance.now() - tInferStart);
       console.log(`[Voice2Note] ONNX inference completed in ${inferenceMs}ms`);
 
+      if (!output) {
+        throw new Error('Whisper returned an empty result');
+      }
+
+      console.log('[Voice2Note] transcription result:', {
+        type: typeof output,
+        constructor: output?.constructor?.name,
+        isArray: Array.isArray(output),
+        keys: output ? Object.keys(output) : null,
+      });
+
       const rawText = (output.text || '').trim();
-      const chunks = output.chunks || [];
+      const chunks = Array.isArray(output.chunks) ? output.chunks : [];
 
       const segments: TranscriptSegment[] = chunks.map((chunk: any, index: number) => {
         const start = Array.isArray(chunk.timestamp) ? chunk.timestamp[0] ?? 0 : 0;

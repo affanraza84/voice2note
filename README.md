@@ -16,7 +16,7 @@
 
 <video src="public/video/voice2note_demo.mp4" controls="controls" muted="muted" width="100%"></video>
 
-> 🎬 **Watch the walkthrough video**: [`public/video/voice2note_demo.mp4`](public/video/voice2note_demo.mp4)  
+> 🎬 **Watch the walkthrough video**: [Google Drive Demo Video](https://drive.google.com/drive/u/0/home)  
 > 📜 **Presentation script**: [`docs/demo-script.md`](docs/demo-script.md)
 
 ---
@@ -325,7 +325,7 @@ Want to test Voice2Note without recording your own voice first?
 2. Click **"Load 6 Demo Notes"** under Interactive Demo Dataset.
 3. Return to **Dashboard** or **Ask My Notes** to immediately test search, extraction, and grounded RAG citations!
 
-*Watch the video walkthrough in [`public/video/voice2note_demo.mp4`](public/video/voice2note_demo.mp4) and see [`docs/demo-script.md`](docs/demo-script.md) for our timed 3-minute video presentation script.*
+*Watch the video walkthrough on [Google Drive](https://drive.google.com/drive/u/0/home) and see [`docs/demo-script.md`](docs/demo-script.md) for our timed 3-minute video presentation script.*
 
 ---
 

@@ -16,7 +16,7 @@
 
 <video src="public/video/voice2note_demo.mp4" controls="controls" muted="muted" width="100%"></video>
 
-> 🎬 **Watch the walkthrough video**: [Google Drive Demo Video](https://drive.google.com/drive/u/0/home)  
+> 🎬 **Watch the walkthrough video**: [Google Drive Demo Video](https://drive.google.com/drive/u/0/my-drive)  
 > 📜 **Presentation script**: [`docs/demo-script.md`](docs/demo-script.md)
 
 ---

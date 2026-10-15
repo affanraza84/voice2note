@@ -309,7 +309,14 @@ export function deleteVoiceNote(id: string): { audioFileName: string } | null {
   const row = db.prepare(`SELECT audio_file_name FROM voice_notes WHERE id = ?`).get(id) as any;
   if (!row) return null;
 
-  db.prepare(`DELETE FROM voice_notes WHERE id = ?`).run(id);
+  const deleteTx = db.transaction((noteId: string) => {
+    db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(noteId);
+    db.prepare(`DELETE FROM extractions WHERE voice_note_id = ?`).run(noteId);
+    db.prepare(`DELETE FROM transcripts WHERE voice_note_id = ?`).run(noteId);
+    db.prepare(`DELETE FROM voice_notes WHERE id = ?`).run(noteId);
+  });
+
+  deleteTx(id);
   return { audioFileName: row.audio_file_name };
 }
 

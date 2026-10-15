@@ -10,6 +10,6 @@ export function getEmbeddingProvider(): EmbeddingProvider {
   return defaultEmbeddingProvider;
 }
 
-export function setEmbeddingProvider(provider: EmbeddingProvider): void {
+export function setEmbeddingProvider(provider: EmbeddingProvider | null): void {
   defaultEmbeddingProvider = provider;
 }

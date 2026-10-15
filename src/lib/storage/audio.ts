@@ -82,12 +82,14 @@ export function getAudioFilePath(fileName: string): string | null {
   return null;
 }
 
-export function deleteAudioFiles(id: string, fileName: string): void {
+export async function deleteAudioFiles(id: string, fileName: string): Promise<void> {
   if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
     return;
   }
   const storage = getAudioStorage();
-  storage.delete(id, fileName).catch((err) => {
+  try {
+    await storage.delete(id, fileName);
+  } catch (err) {
     console.warn(`Audio deletion warning for ${fileName}:`, err);
-  });
+  }
 }

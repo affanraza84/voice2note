@@ -15,15 +15,17 @@ export function getSpeechProvider(): SpeechProvider {
     (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
   );
 
+  const forceLocal = process.env.SPEECH_PROVIDER === 'local';
+  const forceRemote = process.env.SPEECH_PROVIDER === 'remote';
+
   const hasRemoteKey = Boolean(
     process.env.GROQ_API_KEY ||
     process.env.SPEECH_API_KEY ||
-    (isServerless && process.env.AI_API_KEY)
+    process.env.AI_API_KEY ||
+    process.env.OPENAI_API_KEY
   );
 
-  const forceRemote = process.env.SPEECH_PROVIDER === 'remote';
-
-  if (forceRemote || (isServerless && hasRemoteKey)) {
+  if (!forceLocal && (forceRemote || (isServerless && hasRemoteKey))) {
     defaultProvider = new RemoteSpeechProvider();
   } else {
     defaultProvider = new LocalSpeechProvider();
@@ -32,6 +34,6 @@ export function getSpeechProvider(): SpeechProvider {
   return defaultProvider;
 }
 
-export function setSpeechProvider(provider: SpeechProvider): void {
+export function setSpeechProvider(provider: SpeechProvider | null): void {
   defaultProvider = provider;
 }

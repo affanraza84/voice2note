@@ -15,15 +15,16 @@ export function getLLMProvider(): LLMProvider {
     (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV === 'production')
   );
 
+  const forceLocal = process.env.LLM_PROVIDER === 'local' || process.env.AI_PROVIDER === 'local';
+  const forceRemote = process.env.LLM_PROVIDER === 'remote' || process.env.AI_PROVIDER === 'remote';
+
   const hasRemoteKey = Boolean(
     process.env.GROQ_API_KEY ||
-    (isServerless && process.env.AI_API_KEY) ||
+    process.env.AI_API_KEY ||
     process.env.OPENAI_API_KEY
   );
 
-  const forceRemote = process.env.LLM_PROVIDER === 'remote' || process.env.AI_PROVIDER === 'remote';
-
-  if (forceRemote || (isServerless && hasRemoteKey)) {
+  if (!forceLocal && (forceRemote || (isServerless && hasRemoteKey))) {
     defaultLLMProvider = new RemoteOpenAICompatibleLLMProvider();
   } else {
     defaultLLMProvider = new LocalLLMProvider();
@@ -32,6 +33,6 @@ export function getLLMProvider(): LLMProvider {
   return defaultLLMProvider;
 }
 
-export function setLLMProvider(provider: LLMProvider): void {
+export function setLLMProvider(provider: LLMProvider | null): void {
   defaultLLMProvider = provider;
 }

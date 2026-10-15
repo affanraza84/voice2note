@@ -4,6 +4,7 @@ import { VercelBlobAudioStorage } from './blob-storage';
 
 export * from './types';
 export * from './audio-utils';
+export * from './audio';
 export * from './local-storage';
 export * from './blob-storage';
 
@@ -15,10 +16,11 @@ export function getAudioStorage(): AudioStorageProvider {
   }
 
   // Detect persistent object storage configuration
-  const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const forceLocal = process.env.STORAGE_PROVIDER === 'local' || process.env.STORAGE_PROVIDER === 'fs';
   const forceBlob = process.env.STORAGE_PROVIDER === 'blob';
+  const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
-  if (hasBlobToken || forceBlob) {
+  if (!forceLocal && (forceBlob || hasBlobToken)) {
     activeStorage = new VercelBlobAudioStorage();
   } else {
     activeStorage = new LocalAudioStorage();
@@ -27,6 +29,6 @@ export function getAudioStorage(): AudioStorageProvider {
   return activeStorage;
 }
 
-export function setAudioStorage(storage: AudioStorageProvider): void {
+export function setAudioStorage(storage: AudioStorageProvider | null): void {
   activeStorage = storage;
 }

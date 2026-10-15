@@ -40,6 +40,18 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
+function getLocalStorage(): Storage | null {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage;
+    }
+    if (typeof localStorage !== 'undefined') {
+      return localStorage;
+    }
+  } catch {}
+  return null;
+}
+
 export async function saveClientNote(note: VoiceNote, audioBlob?: Blob): Promise<void> {
   try {
     const db = await openDatabase();
@@ -60,10 +72,13 @@ export async function saveClientNote(note: VoiceNote, audioBlob?: Blob): Promise
   } catch (err) {
     console.warn('[Voice2Note] IndexedDB save warning (falling back to localStorage):', err);
     try {
-      const cached = JSON.parse(localStorage.getItem('v2n_cached_notes') || '[]');
-      const filtered = cached.filter((n: any) => n.id !== note.id);
-      filtered.unshift(note);
-      localStorage.setItem('v2n_cached_notes', JSON.stringify(filtered.slice(0, 50)));
+      const storage = getLocalStorage();
+      if (storage) {
+        const cached = JSON.parse(storage.getItem('v2n_cached_notes') || '[]');
+        const filtered = cached.filter((n: any) => n.id !== note.id);
+        filtered.unshift(note);
+        storage.setItem('v2n_cached_notes', JSON.stringify(filtered.slice(0, 50)));
+      }
     } catch {}
   }
 }
@@ -84,11 +99,11 @@ export async function getClientNotes(): Promise<VoiceNote[]> {
       request.onerror = () => reject(request.error);
     });
   } catch {
-    try {
-      return JSON.parse(localStorage.getItem('v2n_cached_notes') || '[]');
-    } catch {
-      return [];
+    const storage = getLocalStorage();
+    if (storage) {
+      return JSON.parse(storage.getItem('v2n_cached_notes') || '[]');
     }
+    return [];
   }
 }
 
@@ -105,8 +120,12 @@ export async function getClientNote(id: string): Promise<VoiceNote | null> {
     });
   } catch {
     try {
-      const cached = JSON.parse(localStorage.getItem('v2n_cached_notes') || '[]');
-      return cached.find((n: any) => n.id === id) || null;
+      const storage = getLocalStorage();
+      if (storage) {
+        const cached = JSON.parse(storage.getItem('v2n_cached_notes') || '[]');
+        return cached.find((n: any) => n.id === id) || null;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -143,11 +162,17 @@ export async function deleteClientNote(id: string): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {
-    try {
-      const cached = JSON.parse(localStorage.getItem('v2n_cached_notes') || '[]');
-      const filtered = cached.filter((n: any) => n.id !== id);
-      localStorage.setItem('v2n_cached_notes', JSON.stringify(filtered));
-    } catch {}
+  } catch (err) {
+    console.warn('[Voice2Note] IndexedDB delete warning:', err);
   }
+
+  // Always ensure localStorage fallback cache is purged as well
+  try {
+    const storage = getLocalStorage();
+    if (storage) {
+      const cached = JSON.parse(storage.getItem('v2n_cached_notes') || '[]');
+      const filtered = cached.filter((n: any) => n.id !== id);
+      storage.setItem('v2n_cached_notes', JSON.stringify(filtered));
+    }
+  } catch {}
 }

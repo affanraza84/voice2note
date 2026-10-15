@@ -66,7 +66,7 @@ export async function DELETE(
     }
 
     // Clean up physical audio files
-    deleteAudioFiles(id, deleted.audioFileName);
+    await deleteAudioFiles(id, deleted.audioFileName);
 
     return NextResponse.json({ success: true, message: 'Voice note and audio deleted successfully' });
   } catch (error: any) {

@@ -131,16 +131,21 @@ export class LocalAudioStorage implements AudioStorageProvider {
     const safeName = path.basename(fileName);
     const mainFile = path.join(this.baseDir, safeName);
     const normalizedWav = path.join(this.baseDir, `${id}_16k.wav`);
+    const tempWav = path.join(this.baseDir, `${safeName}.tmp.wav`);
 
-    if (fs.existsSync(mainFile)) {
-      try {
-        fs.unlinkSync(mainFile);
-      } catch {}
+    for (const f of [mainFile, normalizedWav, tempWav]) {
+      if (fs.existsSync(/*turbopackIgnore: true*/ f)) {
+        try {
+          fs.unlinkSync(f);
+        } catch {}
+      }
     }
 
-    if (fs.existsSync(normalizedWav)) {
+    // Also remove temporary processing file if present
+    const tmpProcFile = path.join('/tmp', 'voice2note-proc', `${id}-${safeName}`);
+    if (fs.existsSync(/*turbopackIgnore: true*/ tmpProcFile)) {
       try {
-        fs.unlinkSync(normalizedWav);
+        fs.unlinkSync(tmpProcFile);
       } catch {}
     }
   }

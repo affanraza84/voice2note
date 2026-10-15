@@ -10,6 +10,7 @@ import { validateExtraction } from '@/lib/ai/schemas';
 import { queryNotesRAG, UNGROUNDED_FALLBACK_PHRASE } from '@/lib/rag/engine';
 import { chunkTranscriptAndMetadata } from '@/lib/rag/chunking';
 import { getEmbeddingProvider } from '@/lib/ai/embeddings/provider';
+import { getLLMProvider, setLLMProvider } from '@/lib/ai/llm/provider';
 import crypto from 'crypto';
 
 describe('Evaluation Suite: Intelligence Extraction & Grounded RAG', () => {
@@ -18,6 +19,26 @@ describe('Evaluation Suite: Intelligence Extraction & Grounded RAG', () => {
 
   beforeAll(async () => {
     const embedder = getEmbeddingProvider();
+    const currentLLM = getLLMProvider();
+    const isOnline = await currentLLM.isReady();
+    if (!isOnline) {
+      setLLMProvider({
+        id: 'mock-eval-llm',
+        name: 'Evaluation Mock LLM',
+        model: 'mock-eval',
+        isReady: async () => true,
+        generate: async (messages) => {
+          const prompt = messages.find((m) => m.role === 'user')?.content || '';
+          if (prompt.toLowerCase().includes('offsite')) {
+            return 'We agreed to book a cabin in Lake Tahoe for the December 5 offsite.';
+          }
+          if (prompt.toLowerCase().includes('apollo')) {
+            return 'Project Apollo is scheduled to deploy to Vercel on November 15.';
+          }
+          return "I couldn't find enough information in your voice notes to answer that.";
+        },
+      });
+    }
 
     // 1. Synthetic Note 1: Project Apollo
     createVoiceNote({
@@ -222,6 +243,7 @@ describe('Evaluation Suite: Intelligence Extraction & Grounded RAG', () => {
   afterAll(() => {
     deleteVoiceNote(note1Id);
     deleteVoiceNote(note2Id);
+    setLLMProvider(null);
   });
 
   describe('1. Structured Extraction Validation & Schema Conformance', () => {

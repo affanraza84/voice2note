@@ -23,7 +23,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-import { getClientNote, getClientAudioBlob } from '@/lib/storage/client-db';
+import { getClientNote, getClientAudioBlob, deleteClientNote } from '@/lib/storage/client-db';
 import { preprocessAudioForWhisper } from '@/lib/audio/browser-audio';
 import { getBrowserWhisper } from '@/lib/ai/browser-whisper';
 
@@ -132,11 +132,13 @@ export default function NoteDetailPage() {
     }
     try {
       const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+      await deleteClientNote(id);
       if (res.ok) {
         router.push('/notes');
       }
     } catch (err) {
       console.error('Delete failed:', err);
+      await deleteClientNote(id);
     }
   };
 

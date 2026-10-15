@@ -1,6 +1,7 @@
 import { AudioStorageProvider } from './types';
 import { LocalAudioStorage } from './local-storage';
 import { VercelBlobAudioStorage } from './blob-storage';
+import { getProcessingMode, isCloudOptInConfirmed } from '@/lib/config/processing-mode';
 
 export * from './types';
 export * from './audio-utils';
@@ -15,7 +16,23 @@ export function getAudioStorage(): AudioStorageProvider {
     return activeStorage;
   }
 
-  // Detect persistent object storage configuration
+  const mode = getProcessingMode();
+
+  // In local-private mode: strictly enforce local storage and fail closed against cloud blob
+  if (mode === 'local-private') {
+    activeStorage = new LocalAudioStorage();
+    return activeStorage;
+  }
+
+  // In cloud-assisted mode: explicit opt-in is required
+  if (!isCloudOptInConfirmed()) {
+    console.warn(
+      '[Voice2Note] Cloud-Assisted storage requested without explicit opt-in. Failing closed to LocalAudioStorage.'
+    );
+    activeStorage = new LocalAudioStorage();
+    return activeStorage;
+  }
+
   const forceLocal = process.env.STORAGE_PROVIDER === 'local' || process.env.STORAGE_PROVIDER === 'fs';
   const forceBlob = process.env.STORAGE_PROVIDER === 'blob';
   const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);

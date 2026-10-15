@@ -543,7 +543,9 @@ describe('Pipeline Resilience, Deduplication & Comprehensive Deletion Suite', ()
       expect(storage instanceof LocalAudioStorage).toBe(true);
     });
 
-    it('selects blob storage when STORAGE_PROVIDER=blob', () => {
+    it('selects blob storage when STORAGE_PROVIDER=blob in cloud-assisted mode with opt-in', () => {
+      process.env.PROCESSING_MODE = 'cloud-assisted';
+      process.env.CLOUD_ASSISTED_OPT_IN = 'true';
       process.env.STORAGE_PROVIDER = 'blob';
       setAudioStorage(null);
 

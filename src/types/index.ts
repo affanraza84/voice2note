@@ -149,3 +149,45 @@ export interface LocalAIStatus {
     activeJobs: number;
   };
 }
+
+export type ProcessingMode = 'local-private' | 'cloud-assisted';
+
+export interface DataFlowDestination {
+  category: 'audio' | 'transcripts' | 'prompts' | 'metadata';
+  label: string;
+  destination: string;
+  isExternal: boolean;
+  retentionNote: string;
+}
+
+export interface ModelDownloadInfo {
+  name: string;
+  component: string;
+  sizeEstimate: string;
+  source: string;
+  cachedLocally: boolean;
+  license: string;
+}
+
+export interface ModeDisclosure {
+  mode: ProcessingMode;
+  optInConfirmed: boolean;
+  destinations: DataFlowDestination[];
+  modelDownloads: ModelDownloadInfo[];
+  offlineReady: boolean;
+  offlineVerificationNote: string;
+}
+
+export interface ModeValidationResult {
+  valid: boolean;
+  mode: ProcessingMode;
+  optInConfirmed: boolean;
+  errors: string[];
+  warnings: string[];
+  activeProviders: {
+    speech: string;
+    llm: string;
+    embeddings: string;
+    storage: string;
+  };
+}

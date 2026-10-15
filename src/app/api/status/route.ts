@@ -4,6 +4,7 @@ import { getStats, getSetting } from '@/lib/db';
 import { getLLMProvider } from '@/lib/ai/llm/provider';
 import { getSpeechProvider } from '@/lib/ai/speech/provider';
 import { getAudioStorage } from '@/lib/storage';
+import { getProcessingMode, validateModeConfiguration, getModeDisclosure } from '@/lib/config/processing-mode';
 import { LocalAIStatus } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,9 @@ export async function GET() {
   const llm = getLLMProvider();
   const speech = getSpeechProvider();
   const storage = getAudioStorage();
+  const mode = getProcessingMode();
+  const validation = validateModeConfiguration(mode);
+  const disclosure = getModeDisclosure(mode);
 
   const isLlmOnline = await llm.isReady();
   const isSpeechReady = await speech.isReady();
@@ -27,7 +31,7 @@ export async function GET() {
   );
 
   let statusType: LocalAIStatus['status'] = 'ready';
-  let label = 'Local AI Ready';
+  let label = mode === 'local-private' ? 'Local AI Ready (Private)' : 'Cloud AI Ready (Assisted)';
 
   if (activeJobs > 0) {
     statusType = 'processing';
@@ -71,6 +75,9 @@ export async function GET() {
 
   return NextResponse.json({
     status,
+    processingMode: mode,
+    validation,
+    disclosure,
     storage: {
       provider: storage.name,
       id: storage.id,

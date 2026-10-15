@@ -1,11 +1,29 @@
 import { SpeechProvider } from '../types';
 import { LocalSpeechProvider } from './local-whisper';
 import { RemoteSpeechProvider } from './remote-whisper';
+import { getProcessingMode, isCloudOptInConfirmed } from '@/lib/config/processing-mode';
 
 let defaultProvider: SpeechProvider | null = null;
 
 export function getSpeechProvider(): SpeechProvider {
   if (defaultProvider) {
+    return defaultProvider;
+  }
+
+  const mode = getProcessingMode();
+
+  // In local-private mode: Strictly enforce Local Whisper and fail-closed against remote inference
+  if (mode === 'local-private') {
+    defaultProvider = new LocalSpeechProvider();
+    return defaultProvider;
+  }
+
+  // In cloud-assisted mode: Explicit opt-in is required
+  if (!isCloudOptInConfirmed()) {
+    console.warn(
+      '[Voice2Note] Cloud-Assisted speech transcription requested without explicit opt-in. Failing closed to LocalSpeechProvider.'
+    );
+    defaultProvider = new LocalSpeechProvider();
     return defaultProvider;
   }
 
@@ -25,7 +43,7 @@ export function getSpeechProvider(): SpeechProvider {
     process.env.OPENAI_API_KEY
   );
 
-  if (!forceLocal && (forceRemote || (isServerless && hasRemoteKey))) {
+  if (!forceLocal && (forceRemote || (isServerless && hasRemoteKey) || hasRemoteKey)) {
     defaultProvider = new RemoteSpeechProvider();
   } else {
     defaultProvider = new LocalSpeechProvider();

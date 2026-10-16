@@ -1,7 +1,18 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { VoiceNote, Transcript, NoteStatus, Extraction, TaskItem, VectorChunk } from '@/types';
+import {
+  VoiceNote,
+  Transcript,
+  NoteStatus,
+  Extraction,
+  TaskItem,
+  VectorChunk,
+  ClientCommitmentItem,
+  OpenQuestionItem,
+  FollowUpSuggestionItem,
+  EmailDraft,
+} from '@/types';
 
 export function getDatabaseConfig(): { dataDir: string; dbPath: string; isEphemeral: boolean } {
   if (process.env.SQLITE_DB_PATH) {
@@ -56,6 +67,8 @@ export function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS voice_notes (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      client TEXT DEFAULT '',
+      project TEXT DEFAULT '',
       audio_file_name TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       file_size_bytes INTEGER NOT NULL,
@@ -82,13 +95,20 @@ export function getDb(): Database.Database {
       id TEXT PRIMARY KEY,
       voice_note_id TEXT NOT NULL UNIQUE,
       title TEXT NOT NULL DEFAULT '',
+      client TEXT DEFAULT '',
+      project TEXT DEFAULT '',
+      call_summary TEXT DEFAULT '',
       summary TEXT NOT NULL,
       tasks TEXT NOT NULL,
+      client_commitments TEXT DEFAULT '[]',
       ideas TEXT NOT NULL,
       decisions TEXT NOT NULL,
+      open_questions TEXT DEFAULT '[]',
+      follow_up_suggestions TEXT DEFAULT '[]',
       people TEXT NOT NULL,
       topics TEXT NOT NULL,
       important_dates TEXT NOT NULL,
+      email_draft TEXT DEFAULT '{}',
       model_used TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (voice_note_id) REFERENCES voice_notes(id) ON DELETE CASCADE
@@ -116,9 +136,36 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_note_embeddings_note ON note_embeddings(note_id);
   `);
 
-  // Safely add any new columns to extractions if previously created without them
+  // Safely add any new columns to voice_notes and extractions if previously created without them
+  try {
+    db.prepare(`ALTER TABLE voice_notes ADD COLUMN client TEXT DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE voice_notes ADD COLUMN project TEXT DEFAULT ''`).run();
+  } catch {}
   try {
     db.prepare(`ALTER TABLE extractions ADD COLUMN title TEXT NOT NULL DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN client TEXT DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN project TEXT DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN call_summary TEXT DEFAULT ''`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN client_commitments TEXT DEFAULT '[]'`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN open_questions TEXT DEFAULT '[]'`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN follow_up_suggestions TEXT DEFAULT '[]'`).run();
+  } catch {}
+  try {
+    db.prepare(`ALTER TABLE extractions ADD COLUMN email_draft TEXT DEFAULT '{}'`).run();
   } catch {}
   try {
     db.prepare(`ALTER TABLE extractions ADD COLUMN model_used TEXT NOT NULL DEFAULT ''`).run();
@@ -135,6 +182,8 @@ export function getDb(): Database.Database {
 export function createVoiceNote(note: {
   id: string;
   title: string;
+  client?: string;
+  project?: string;
   audioFileName: string;
   mimeType: string;
   fileSizeBytes: number;
@@ -145,17 +194,21 @@ export function createVoiceNote(note: {
   const now = new Date().toISOString();
   const duration = note.durationSeconds ?? 0;
   const status = note.status ?? 'uploading';
+  const client = note.client ?? '';
+  const project = note.project ?? '';
 
   const stmt = db.prepare(`
-    INSERT INTO voice_notes (id, title, audio_file_name, mime_type, file_size_bytes, duration_seconds, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO voice_notes (id, title, client, project, audio_file_name, mime_type, file_size_bytes, duration_seconds, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  stmt.run(note.id, note.title, note.audioFileName, note.mimeType, note.fileSizeBytes, duration, status, now, now);
+  stmt.run(note.id, note.title, client, project, note.audioFileName, note.mimeType, note.fileSizeBytes, duration, status, now, now);
 
   return {
     id: note.id,
     title: note.title,
+    client,
+    project,
     audioFileName: note.audioFileName,
     mimeType: note.mimeType,
     fileSizeBytes: note.fileSizeBytes,
@@ -191,10 +244,30 @@ export function updateVoiceNoteStatus(
   }
 }
 
-export function updateVoiceNoteTitle(id: string, title: string): void {
+export function updateVoiceNoteMetadata(
+  id: string,
+  updates: { title?: string; client?: string; project?: string }
+): VoiceNote | null {
   const db = getDb();
   const now = new Date().toISOString();
-  db.prepare(`UPDATE voice_notes SET title = ?, updated_at = ? WHERE id = ?`).run(title, now, id);
+  const existing = getVoiceNote(id);
+  if (!existing) return null;
+
+  const title = updates.title !== undefined ? updates.title.trim() : existing.title;
+  const client = updates.client !== undefined ? updates.client.trim() : (existing.client || '');
+  const project = updates.project !== undefined ? updates.project.trim() : (existing.project || '');
+
+  db.prepare(`
+    UPDATE voice_notes 
+    SET title = ?, client = ?, project = ?, updated_at = ?
+    WHERE id = ?
+  `).run(title, client, project, now, id);
+
+  return getVoiceNote(id);
+}
+
+export function updateVoiceNoteTitle(id: string, title: string): void {
+  updateVoiceNoteMetadata(id, { title });
 }
 
 export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript | null; extraction?: Extraction | null }) | null {
@@ -224,13 +297,20 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
       id: extractionRow.id,
       voiceNoteId: extractionRow.voice_note_id,
       title: extractionRow.title || '',
+      client: extractionRow.client || '',
+      project: extractionRow.project || '',
+      callSummary: extractionRow.call_summary || '',
       summary: extractionRow.summary,
       tasks: JSON.parse(extractionRow.tasks || '[]'),
+      clientCommitments: JSON.parse(extractionRow.client_commitments || '[]'),
       ideas: JSON.parse(extractionRow.ideas || '[]'),
       decisions: JSON.parse(extractionRow.decisions || '[]'),
+      openQuestions: JSON.parse(extractionRow.open_questions || '[]'),
+      followUpSuggestions: JSON.parse(extractionRow.follow_up_suggestions || '[]'),
       people: JSON.parse(extractionRow.people || '[]'),
       topics: JSON.parse(extractionRow.topics || '[]'),
       importantDates: JSON.parse(extractionRow.important_dates || '[]'),
+      emailDraft: JSON.parse(extractionRow.email_draft || '{}'),
       modelUsed: extractionRow.model_used || '',
       createdAt: extractionRow.created_at,
     };
@@ -239,6 +319,8 @@ export function getVoiceNote(id: string): (VoiceNote & { transcript?: Transcript
   return {
     id: row.id,
     title: row.title,
+    client: row.client || '',
+    project: row.project || '',
     audioFileName: row.audio_file_name,
     mimeType: row.mime_type,
     fileSizeBytes: row.file_size_bytes,
@@ -289,6 +371,8 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
     return {
       id: row.id,
       title: row.title,
+      client: row.client || '',
+      project: row.project || '',
       audioFileName: row.audio_file_name,
       mimeType: row.mime_type,
       fileSizeBytes: row.file_size_bytes,
@@ -379,30 +463,55 @@ export function saveExtraction(data: {
   id: string;
   voiceNoteId: string;
   title: string;
+  client?: string;
+  project?: string;
+  callSummary?: string;
   summary: string;
   tasks: TaskItem[];
+  clientCommitments?: ClientCommitmentItem[];
   ideas: any[];
   decisions: any[];
+  openQuestions?: OpenQuestionItem[];
+  followUpSuggestions?: FollowUpSuggestionItem[];
   people: string[];
   topics: string[];
   importantDates: any[];
+  emailDraft?: EmailDraft;
   modelUsed?: string;
 }): Extraction {
   const db = getDb();
   const now = new Date().toISOString();
+  const client = data.client ?? '';
+  const project = data.project ?? '';
+  const callSummary = data.callSummary ?? '';
+  const clientCommitments = data.clientCommitments ?? [];
+  const openQuestions = data.openQuestions ?? [];
+  const followUpSuggestions = data.followUpSuggestions ?? [];
+  const emailDraft = data.emailDraft ?? { subject: '', body: '' };
 
   const stmt = db.prepare(`
-    INSERT INTO extractions (id, voice_note_id, title, summary, tasks, ideas, decisions, people, topics, important_dates, model_used, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO extractions (
+      id, voice_note_id, title, client, project, call_summary, summary,
+      tasks, client_commitments, ideas, decisions, open_questions, follow_up_suggestions,
+      people, topics, important_dates, email_draft, model_used, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(voice_note_id) DO UPDATE SET
       title = excluded.title,
+      client = excluded.client,
+      project = excluded.project,
+      call_summary = excluded.call_summary,
       summary = excluded.summary,
       tasks = excluded.tasks,
+      client_commitments = excluded.client_commitments,
       ideas = excluded.ideas,
       decisions = excluded.decisions,
+      open_questions = excluded.open_questions,
+      follow_up_suggestions = excluded.follow_up_suggestions,
       people = excluded.people,
       topics = excluded.topics,
       important_dates = excluded.important_dates,
+      email_draft = excluded.email_draft,
       model_used = excluded.model_used,
       created_at = excluded.created_at
   `);
@@ -411,13 +520,20 @@ export function saveExtraction(data: {
     data.id,
     data.voiceNoteId,
     data.title,
+    client,
+    project,
+    callSummary,
     data.summary,
     JSON.stringify(data.tasks),
+    JSON.stringify(clientCommitments),
     JSON.stringify(data.ideas),
     JSON.stringify(data.decisions),
+    JSON.stringify(openQuestions),
+    JSON.stringify(followUpSuggestions),
     JSON.stringify(data.people),
     JSON.stringify(data.topics),
     JSON.stringify(data.importantDates),
+    JSON.stringify(emailDraft),
     data.modelUsed || '',
     now
   );
@@ -426,19 +542,30 @@ export function saveExtraction(data: {
     id: data.id,
     voiceNoteId: data.voiceNoteId,
     title: data.title,
+    client,
+    project,
+    callSummary,
     summary: data.summary,
     tasks: data.tasks,
+    clientCommitments,
     ideas: data.ideas,
     decisions: data.decisions,
+    openQuestions,
+    followUpSuggestions,
     people: data.people,
     topics: data.topics,
     importantDates: data.importantDates,
+    emailDraft,
     modelUsed: data.modelUsed,
     createdAt: now,
   };
 }
 
-export function updateTaskStatus(voiceNoteId: string, taskId: string, completed: boolean): TaskItem[] | null {
+export function updateTask(
+  voiceNoteId: string,
+  taskId: string,
+  updates: Partial<Pick<TaskItem, 'title' | 'dueDate' | 'dueDateType' | 'priority' | 'completed'>>
+): TaskItem[] | null {
   const db = getDb();
   const row = db.prepare(`SELECT tasks FROM extractions WHERE voice_note_id = ?`).get(voiceNoteId) as any;
   if (!row) return null;
@@ -447,9 +574,61 @@ export function updateTaskStatus(voiceNoteId: string, taskId: string, completed:
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return null;
 
-  task.completed = completed;
+  if (updates.completed !== undefined) task.completed = updates.completed;
+  if (updates.title !== undefined && updates.title.trim()) task.title = updates.title.trim();
+  if (updates.dueDate !== undefined) task.dueDate = updates.dueDate;
+  if (updates.dueDateType !== undefined) task.dueDateType = updates.dueDateType;
+  if (updates.priority !== undefined) task.priority = updates.priority;
+
   db.prepare(`UPDATE extractions SET tasks = ? WHERE voice_note_id = ?`).run(JSON.stringify(tasks), voiceNoteId);
   return tasks;
+}
+
+export function updateTaskStatus(voiceNoteId: string, taskId: string, completed: boolean): TaskItem[] | null {
+  return updateTask(voiceNoteId, taskId, { completed });
+}
+
+export function updateExtraction(
+  voiceNoteId: string,
+  updates: {
+    callSummary?: string;
+    emailDraft?: EmailDraft;
+    client?: string;
+    project?: string;
+  }
+): Extraction | null {
+  const db = getDb();
+  const row = db.prepare(`SELECT * FROM extractions WHERE voice_note_id = ?`).get(voiceNoteId) as any;
+  if (!row) return null;
+
+  const client = updates.client !== undefined ? updates.client.trim() : (row.client || '');
+  const project = updates.project !== undefined ? updates.project.trim() : (row.project || '');
+  const callSummary = updates.callSummary !== undefined ? updates.callSummary.trim() : (row.call_summary || '');
+
+  let emailDraft = row.email_draft ? JSON.parse(row.email_draft) : {};
+  if (updates.emailDraft) {
+    emailDraft = {
+      ...emailDraft,
+      ...updates.emailDraft,
+    };
+  }
+
+  db.prepare(`
+    UPDATE extractions 
+    SET client = ?, project = ?, call_summary = ?, email_draft = ?
+    WHERE voice_note_id = ?
+  `).run(client, project, callSummary, JSON.stringify(emailDraft), voiceNoteId);
+
+  // Sync client/project to voice_notes table as well if provided
+  if (updates.client !== undefined || updates.project !== undefined) {
+    updateVoiceNoteMetadata(voiceNoteId, {
+      client: updates.client,
+      project: updates.project,
+    });
+  }
+
+  const updatedNote = getVoiceNote(voiceNoteId);
+  return updatedNote?.extraction || null;
 }
 
 // -------------------------------------------------------------

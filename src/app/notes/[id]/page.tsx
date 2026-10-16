@@ -14,18 +14,21 @@ import {
   Clock,
   Trash2,
   Edit2,
-  Check,
-  X,
   Loader2,
   RefreshCw,
   AlertCircle,
   FileAudio,
   Sparkles,
+  Download,
+  Building2,
+  FolderGit2,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 import { getClientNote, getClientAudioBlob, deleteClientNote } from '@/lib/storage/client-db';
 import { preprocessAudioForWhisper } from '@/lib/audio/browser-audio';
 import { getBrowserWhisper } from '@/lib/ai/browser-whisper';
+import { generateMeetingMarkdown, generateTasksCSV, downloadFile } from '@/lib/export/meeting-export';
 
 export default function NoteDetailPage() {
   const params = useParams();
@@ -35,8 +38,10 @@ export default function NoteDetailPage() {
   const [note, setNote] = useState<VoiceNote | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'intelligence' | 'transcript'>('intelligence');
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isEditingMetadata, setIsEditingMetadata] = useState(false);
   const [titleInput, setTitleInput] = useState('');
+  const [clientInput, setClientInput] = useState('');
+  const [projectInput, setProjectInput] = useState('');
   const [seekTime, setSeekTime] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [retranscribing, setRetranscribing] = useState(false);
@@ -50,16 +55,20 @@ export default function NoteDetailPage() {
       if (res.ok) {
         const data = await res.json();
         setNote(data.note);
-        if (!isEditingTitle) {
+        if (!isEditingMetadata) {
           setTitleInput(data.note.title);
+          setClientInput(data.note.client || '');
+          setProjectInput(data.note.project || '');
         }
       } else {
         // Fallback to client IndexedDB storage if server returned 404 (e.g. serverless cold start)
         const localNote = await getClientNote(id);
         if (localNote) {
           setNote(localNote);
-          if (!isEditingTitle) {
+          if (!isEditingMetadata) {
             setTitleInput(localNote.title);
+            setClientInput(localNote.client || '');
+            setProjectInput(localNote.project || '');
           }
         } else {
           setNote(null);
@@ -70,14 +79,16 @@ export default function NoteDetailPage() {
       const localNote = await getClientNote(id);
       if (localNote) {
         setNote(localNote);
-        if (!isEditingTitle) {
+        if (!isEditingMetadata) {
           setTitleInput(localNote.title);
+          setClientInput(localNote.client || '');
+          setProjectInput(localNote.project || '');
         }
       }
     } finally {
       setLoading(false);
     }
-  }, [id, isEditingTitle]);
+  }, [id, isEditingMetadata]);
 
   useEffect(() => {
     fetchNote();
@@ -108,22 +119,41 @@ export default function NoteDetailPage() {
     };
   }, [note?.status, note]);
 
-  const handleSaveTitle = async () => {
+  const handleSaveMetadata = async () => {
     if (!titleInput.trim()) return;
     try {
       const res = await fetch(`/api/notes/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: titleInput.trim() }),
+        body: JSON.stringify({
+          title: titleInput.trim(),
+          client: clientInput.trim(),
+          project: projectInput.trim(),
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         setNote(data.note);
-        setIsEditingTitle(false);
+        setIsEditingMetadata(false);
       }
     } catch (err) {
-      console.error('Failed to update title:', err);
+      console.error('Failed to update note metadata:', err);
     }
+  };
+
+  const handleExportMarkdown = () => {
+    if (!note) return;
+    const md = generateMeetingMarkdown(note);
+    const filename = `${note.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-followup.md`;
+    downloadFile(md, filename, 'text/markdown');
+  };
+
+  const handleExportTasksCSV = () => {
+    if (!note) return;
+    const tasks = note.extraction?.tasks || [];
+    const csv = generateTasksCSV(tasks, note.title, note.client, note.project);
+    const filename = `${note.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-tasks.csv`;
+    downloadFile(csv, filename, 'text/csv');
   };
 
   const handleDelete = async () => {
@@ -240,7 +270,7 @@ export default function NoteDetailPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Top Navigation & Action Bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <Link
           href="/notes"
           className="flex items-center gap-2 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
@@ -249,7 +279,29 @@ export default function NoteDetailPage() {
           <span>Back to Notes</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {note.status === 'ready' && (
+            <>
+              <button
+                onClick={handleExportMarkdown}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-200 text-xs font-medium border border-white/10 transition cursor-pointer"
+                title="Download full meeting summary as Markdown"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Export Markdown</span>
+              </button>
+
+              <button
+                onClick={handleExportTasksCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-200 text-xs font-medium border border-white/10 transition cursor-pointer"
+                title="Download action items as CSV"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
+                <span>Export Tasks (CSV)</span>
+              </button>
+            </>
+          )}
+
           {note.status === 'failed' && (
             <button
               onClick={handleRetryTranscription}
@@ -273,45 +325,111 @@ export default function NoteDetailPage() {
 
       {/* Note Header */}
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 space-y-4">
-        {/* Title Editing */}
-        <div className="flex items-start justify-between gap-4">
-          {isEditingTitle ? (
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="text"
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                autoFocus
-                className="flex-1 px-3 py-1.5 rounded-xl bg-black/40 border border-emerald-500/50 text-xl font-bold text-white focus:outline-none"
-              />
-              <button
-                onClick={handleSaveTitle}
-                className="p-2 rounded-lg bg-emerald-500 text-black hover:bg-emerald-400 transition-all"
-              >
-                <Check className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => {
-                  setTitleInput(note.title);
-                  setIsEditingTitle(false);
-                }}
-                className="p-2 rounded-lg bg-white/10 text-zinc-300 hover:bg-white/20 transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
+        {/* Title & Client / Project Editing */}
+        <div className="space-y-3">
+          {isEditingMetadata ? (
+            <div className="space-y-3 p-4 rounded-2xl bg-black/40 border border-emerald-500/30">
+              <div>
+                <label className="block text-[11px] text-zinc-400 mb-1">Meeting Title</label>
+                <input
+                  type="text"
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  autoFocus
+                  className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-emerald-500/50 text-lg font-bold text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-sky-400" />
+                    Client Label
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Apex Health Tech"
+                    value={clientInput}
+                    onChange={(e) => setClientInput(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-xs text-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-1 flex items-center gap-1">
+                    <FolderGit2 className="w-3 h-3 text-emerald-400" />
+                    Project Label
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Patient Portal Redesign"
+                    value={projectInput}
+                    onChange={(e) => setProjectInput(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  onClick={() => {
+                    setTitleInput(note.title);
+                    setClientInput(note.client || '');
+                    setProjectInput(note.project || '');
+                    setIsEditingMetadata(false);
+                  }}
+                  className="px-3 py-1 rounded-lg bg-white/10 text-zinc-300 hover:bg-white/20 text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveMetadata}
+                  className="px-4 py-1 rounded-lg bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 transition"
+                >
+                  Save Metadata
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5 flex-1 group">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
-                {note.title}
-              </h1>
-              <button
-                onClick={() => setIsEditingTitle(true)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
-                title="Edit title"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5 flex-1 group">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
+                  {note.title}
+                </h1>
+                <button
+                  onClick={() => setIsEditingMetadata(true)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  title="Edit title, client, or project"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Client & Project Badges */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {note.client ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Client: {note.client}</span>
+                  </span>
+                ) : null}
+
+                {note.project ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <FolderGit2 className="w-3.5 h-3.5" />
+                    <span>Project: {note.project}</span>
+                  </span>
+                ) : null}
+
+                {(!note.client || !note.project) && (
+                  <button
+                    onClick={() => setIsEditingMetadata(true)}
+                    className="text-[11px] text-zinc-500 hover:text-zinc-300 underline cursor-pointer"
+                  >
+                    + Tag client/project
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -450,6 +568,9 @@ export default function NoteDetailPage() {
           <IntelligenceView
             extraction={note.extraction || null}
             noteId={note.id}
+            noteTitle={note.title}
+            client={note.client}
+            project={note.project}
             onTaskToggle={(_tId, _st) => {}}
           />
         ) : (

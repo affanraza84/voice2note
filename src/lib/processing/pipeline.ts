@@ -2,6 +2,7 @@ import {
   getVoiceNote,
   updateVoiceNoteStatus,
   updateVoiceNoteTitle,
+  updateVoiceNoteMetadata,
   saveTranscript,
   saveExtraction,
   saveEmbeddingChunks,
@@ -248,7 +249,15 @@ export async function processVoiceNote(
             updateVoiceNoteTitle(noteId, data.title.trim());
           }
 
-          // Format task items with UUIDs and sourceNoteId
+          // If client or project are identified and note metadata is empty, update note metadata
+          if ((data.client || data.project) && (!refreshedNote?.client || !refreshedNote?.project)) {
+            updateVoiceNoteMetadata(noteId, {
+              client: refreshedNote?.client || data.client,
+              project: refreshedNote?.project || data.project,
+            });
+          }
+
+          // Format task items with UUIDs, sourceNoteId, and dueDateType
           const tasks = data.tasks.map((t) => ({
             id: crypto.randomUUID(),
             title: t.title,
@@ -256,8 +265,16 @@ export async function processVoiceNote(
             evidence: t.evidence,
             confidence: t.confidence,
             dueDate: t.dueDate,
+            dueDateType: t.dueDateType,
             completed: false,
             priority: t.priority,
+          }));
+
+          const clientCommitments = data.clientCommitments.map((c) => ({
+            id: crypto.randomUUID(),
+            commitment: c.commitment,
+            evidence: c.evidence,
+            by: c.by,
           }));
 
           const ideas = data.ideas.map((i) => ({
@@ -272,6 +289,20 @@ export async function processVoiceNote(
             evidence: d.evidence,
           }));
 
+          const openQuestions = data.openQuestions.map((q) => ({
+            id: crypto.randomUUID(),
+            question: q.question,
+            evidence: q.evidence,
+            askedBy: q.askedBy,
+          }));
+
+          const followUpSuggestions = data.followUpSuggestions.map((s) => ({
+            id: crypto.randomUUID(),
+            suggestion: s.suggestion,
+            evidence: s.evidence,
+            rationale: s.rationale,
+          }));
+
           const importantDates = data.importantDates.map((dt) => ({
             event: dt.event,
             date: dt.date,
@@ -282,13 +313,20 @@ export async function processVoiceNote(
             id: savedExtraction?.id || crypto.randomUUID(),
             voiceNoteId: noteId,
             title: data.title,
+            client: data.client,
+            project: data.project,
+            callSummary: data.callSummary,
             summary: data.summary,
             tasks,
+            clientCommitments,
             ideas,
             decisions,
+            openQuestions,
+            followUpSuggestions,
             people: data.people,
             topics: data.topics,
             importantDates,
+            emailDraft: data.emailDraft,
             modelUsed: llm.model,
           });
 

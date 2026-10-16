@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getVoiceNote, deleteVoiceNote, updateVoiceNoteTitle } from '@/lib/db';
+import { getVoiceNote, deleteVoiceNote, updateVoiceNoteMetadata } from '@/lib/db';
 import { deleteAudioFiles } from '@/lib/storage/audio';
 
 export const dynamic = 'force-dynamic';
@@ -34,14 +34,29 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { title } = body;
+    const { title, client, project } = body;
 
-    if (!title || typeof title !== 'string') {
-      return NextResponse.json({ error: 'Valid title is required' }, { status: 400 });
+    if (
+      title === undefined &&
+      client === undefined &&
+      project === undefined
+    ) {
+      return NextResponse.json({ error: 'At least one field (title, client, project) is required' }, { status: 400 });
     }
 
-    updateVoiceNoteTitle(id, title.trim());
-    const updated = getVoiceNote(id);
+    if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) {
+      return NextResponse.json({ error: 'Valid title is required if provided' }, { status: 400 });
+    }
+
+    const updated = updateVoiceNoteMetadata(id, {
+      title: title !== undefined ? title.trim() : undefined,
+      client: client !== undefined && typeof client === 'string' ? client.trim() : undefined,
+      project: project !== undefined && typeof project === 'string' ? project.trim() : undefined,
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: 'Voice note not found' }, { status: 404 });
+    }
 
     return NextResponse.json({ note: updated });
   } catch (error: any) {

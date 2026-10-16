@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { VoiceNote } from '@/types';
-import { Clock, Calendar, CheckCircle2, Loader2, AlertCircle, Play, CheckSquare, Tag } from 'lucide-react';
+import { Clock, Calendar, CheckCircle2, Loader2, AlertCircle, Play, CheckSquare, Tag, Building2, FolderGit2 } from 'lucide-react';
 
 interface NoteCardProps {
   note: VoiceNote;
@@ -72,6 +72,24 @@ export function NoteCard({ note }: NoteCardProps) {
         </h3>
         {getStatusBadge()}
       </div>
+
+      {/* Client and Project Pills if available */}
+      {(note.client || note.project) && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2 text-[10px]">
+          {note.client && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20 font-medium">
+              <Building2 className="w-2.5 h-2.5" />
+              <span className="line-clamp-1">{note.client}</span>
+            </span>
+          )}
+          {note.project && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+              <FolderGit2 className="w-2.5 h-2.5" />
+              <span className="line-clamp-1">{note.project}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Summary preview */}
       <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed mb-3 min-h-[32px]">

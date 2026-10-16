@@ -14,6 +14,8 @@ export interface TranscriptSegment {
   confidence?: number;
 }
 
+export type DueDateType = 'explicit' | 'inferred' | 'none';
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -21,8 +23,36 @@ export interface TaskItem {
   evidence: string;
   confidence: number;
   dueDate?: string | null;
+  dueDateType?: DueDateType;
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
+}
+
+export interface ClientCommitmentItem {
+  id: string;
+  commitment: string;
+  evidence: string;
+  by?: string;
+}
+
+export interface OpenQuestionItem {
+  id: string;
+  question: string;
+  evidence: string;
+  askedBy?: string;
+}
+
+export interface FollowUpSuggestionItem {
+  id: string;
+  suggestion: string;
+  evidence?: string;
+  rationale?: string;
+}
+
+export interface EmailDraft {
+  subject: string;
+  body: string;
+  recipientName?: string;
 }
 
 export interface IdeaItem {
@@ -47,13 +77,20 @@ export interface Extraction {
   id: string;
   voiceNoteId: string;
   title: string;
+  client?: string;
+  project?: string;
+  callSummary?: string;
   summary: string;
   tasks: TaskItem[];
+  clientCommitments?: ClientCommitmentItem[];
   ideas: IdeaItem[];
   decisions: DecisionItem[];
+  openQuestions?: OpenQuestionItem[];
+  followUpSuggestions?: FollowUpSuggestionItem[];
   people: string[];
   topics: string[];
   importantDates: ImportantDateItem[];
+  emailDraft?: EmailDraft;
   modelUsed?: string;
   createdAt: string;
 }
@@ -61,6 +98,8 @@ export interface Extraction {
 export interface VoiceNote {
   id: string;
   title: string;
+  client?: string;
+  project?: string;
   audioFileName: string;
   mimeType: string;
   fileSizeBytes: number;

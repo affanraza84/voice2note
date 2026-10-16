@@ -29,24 +29,25 @@ By operating **100% locally** (local STT + local LLM via Ollama + local vector e
 
 ## 2. Primary User & Problem Framing
 
-### 2.1 Configurable Persona Specification
+### 2.1 Target Persona: Freelance Consultant & Developer
 
-Voice2Note is built around the "Build for a Friend" ethos. The application includes a configurable persona profile that can be customized to match the user's specific workflow:
+Voice2Note is engineered for independent software engineers, designers, and consultants who manage discovery calls, scoping sessions, and project kickoff meetings with multiple clients:
 
 ```yaml
-FRIEND_NAME: "Alex (Product Designer & Solopreneur)"
-FRIEND_PROBLEM: >
-  Records 5–10 unstructured audio memos every day while commuting, dog-walking,
-  and pacing during design sprints. Memos accumulate in Apple Voice Memos with names
-  like "New Recording 47.m4a". He loses commitments made to clients, brilliant UI
-  ideas, and critical to-do items because re-listening to hours of raw audio is impossible.
-FRIEND_WORKFLOW: >
-  1. Captures quick voice notes on mobile or laptop mic throughout the day.
-  2. Needs an instant end-of-day digest: "What do I actually need to do tomorrow?"
-  3. Needs to query previous thoughts weeks later: "What did I decide about the onboarding flow?"
+TARGET_PERSONA: "Freelance Software Engineer / Consultant"
+CORE_PROBLEM: >
+  Conducts multiple client discovery and kickoff calls each week. Calls are dense with
+  client commitments (access tokens, assets, review dates), developer deliverables, and
+  speculative scope. Re-listening to 45-minute calls is time-prohibitive, while sending
+  confidential client recordings to cloud AI APIs creates severe compliance liability
+  under client NDAs.
+CORE_WORKFLOW: >
+  1. Records or uploads client consultations directly into Voice2Note.
+  2. Receives instant on-device extraction separating client commitments from developer action items.
+  3. Validates explicit confirmed deadlines vs tentative inferred estimates.
+  4. Reviews and edits an auto-generated follow-up email draft ready to send.
+  5. Queries cross-project decisions and deliverables via conversational RAG with grounded citations.
 ```
-
-*(This configuration is abstracted into application settings, allowing seamless adaptation to any friend's specific profile).*
 
 ---
 

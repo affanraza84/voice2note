@@ -99,6 +99,9 @@ npm run lint
 # Unit and integration test suites
 npm run test
 
+# Repeatable AI pipeline evaluation benchmarks
+npm run eval
+
 # Production build verification
 npm run build
 ```

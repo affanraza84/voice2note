@@ -1,108 +1,112 @@
-# Voice2Note: 3-Minute Hackathon Demo Script
+# Voice2Note: Freelancer Client-Call Workflow Demo Script
 
-**Target Duration**: 2 minutes 45 seconds (Buffer: 15s)  
-**Tone**: Confident, authentic, crisp, product-focused.  
-**Presenter**: Builder presenting to hackathon judges.
+**Target Duration**: 3 minutes (180 seconds)  
+**Persona**: Freelance Software Engineer / Consultant presenting to judges and users.  
+**Focus**: Real-world client-call follow-up workflow, client confidentiality, explicit vs. inferred deadlines, and reproducible local AI execution.
 
 ---
 
-### [0:00 – 0:20] The Problem & The Friend
+### [0:00 – 0:25] The Freelancer's Challenge: Post-Call Chaos & Confidentiality
 
-**Action**: Camera on presenter, or screen showing a messy smartphone voice memos folder with 40+ generic recordings (`New Recording 14`, `New Recording 28`).
+**Visual**: Camera on presenter, or screen showing a folder of recorded client consultation calls and messy scratchpad notes with half-typed deliverables.
 
 **Narration**:
-> *"Meet my friend Alex. Alex is a product designer who talks to think. Every day during commutes and brainstorms, Alex records 5 to 10 voice memos.  
-> But the problem was never recording. The problem was what happened afterward.  
-> Brilliant ideas disappeared into a black hole of audio files. Commitments made out loud were completely forgotten. And finding what was decided two weeks ago was basically impossible.  
-> So I built **Voice2Note** specifically for Alex."*
+> *"As a freelance engineer, my client discovery and kickoff calls are where projects succeed or fail.  
+> During a 45-minute consultation, clients share critical context: access credentials, design scope, technical constraints, and tentative schedules.  
+> Afterward, I'd easily spend an hour listening through audio to extract what I promised to build, what the client promised to send me, and drafting the follow-up email.  
+> Worse, client calls routinely contain confidential business logic, internal numbers, and NDA-protected roadmaps. Sending raw client audio to proprietary cloud APIs transfers custody to third-party servers and introduces legal and compliance risks under client NDAs.  
+> That's why I built **Voice2Note**: a local-first meeting follow-up assistant engineered specifically for freelancers."*
 
 ---
 
-### [0:20 – 0:40] The Product & Calm Design
+### [0:25 – 0:50] The Open-Source Local AI Foundation
 
-**Action**: Switch screen share to Voice2Note Dashboard (`http://localhost:3000`). Show clean, calm interface with hero headline: *"Your thoughts, organized automatically."*
+**Visual**: Switch screen share to the Voice2Note Dashboard (`http://localhost:3000`). Show clean, calm interface with headline: *"Client Calls & Deliverables, Handled with Precision."*
 
 **Narration**:
-> *"This is Voice2Note. We deliberately rejected neon AI gimmicks in favor of a calm, productivity-focused workspace.  
-> Everything you see—the speech recognition, the intelligence extraction, the vector database, and the semantic retrieval—runs **100% locally on this machine**. Zero cloud egress, zero subscription fees."*
+> *"Voice2Note replaces generic note-taking with structured client-call workflows.  
+> Everything you see runs locally on this workstation:
+> - Speech transcription via local **Whisper ONNX**.
+> - Structured intelligence extraction via local **Llama 3.2** through Ollama.
+> - Semantic vector search via **all-MiniLM** inside an embedded SQLite database.  
+> All audio, transcripts, and embeddings stay strictly on local loopback (`127.0.0.1`). There are zero recurring per-minute audio fees, zero per-token LLM charges, and zero cloud vector database subscriptions."*
 
 ---
 
-### [0:40 – 1:10] The Live Recording Experience
+### [0:50 – 1:25] Live Workflow: Processing a Client Redesign Call
 
-**Action**: Click the primary CTA **"Record a Note"** (`/record`). Show the live microphone authorization and start speaking a realistic memo:
-
-**Spoken Memo Example**:
-> *"Hey, quick update on the mobile onboarding flow. We decided to ship the beta release to the design team next Wednesday. I need to complete the landing page redesign before Friday afternoon, and make sure to invite David from engineering to the staging walkthrough. Also, Sarah suggested we test a dark mode toggle as a retention experiment."*
-
-**Action**: Click **Stop**. Preview waveform appears with elapsed duration (18s). Click **"Save & Process"**.
-
----
-
-### [1:10 – 1:30] Real-Time Local AI Processing
-
-**Action**: The screen displays the real-time processing progression cards:
+**Visual**: Click **"Record Client Call"** (`/record`) or demonstrate loading the realistic demo client call (`Acme Corp Website Kickoff`). Show the multi-stage local processing progress cards:
 ```text
-Your note is being processed locally...
 Transcribing (Whisper ONNX) → Analyzing (Llama 3.2) → Indexing (MiniLM Embeddings) → Ready
 ```
 
 **Narration**:
-> *"Notice the feedback. Voice2Note immediately transcribes the audio in-process using local Whisper ONNX in less than two seconds.  
-> Then our local Llama 3.2 model extracts structured knowledge, while all-MiniLM generates 384-dimensional embeddings into SQLite.  
-> And just like that—it's ready."*
+> *"When a client call finishes, Voice2Note immediately processes the recording locally.  
+> Notice the feedback pipeline: the audio is normalized to 16kHz PCM, transcribed in-process with Whisper ONNX in ~2 seconds, structured through local Llama 3.2, and indexed into SQLite with 384-dimensional vector embeddings.  
+> In under five seconds, an unstructured 45-minute client discussion is transformed into structured project assets."*
 
 ---
 
-### [1:30 – 1:50] Structured Intelligence & Action Items
+### [1:25 – 2:05] Structured Intelligence: Deliverables, Deadlines & Email Drafts
 
-**Action**: Note detail page opens. Point out the elements:
-- Executive Summary card
-- Action Items with checkbox completion and confidence scores
-- Ideas vs. Decisions separation
-- The new **"Copy Checklist"** button (feedback-driven improvement!)
+**Visual**: Open the note detail page for **Acme Corp Website Kickoff**. Walk through the structured cards:
+1. **Executive Call Summary**: 2-sentence overview of project goals.
+2. **Client Commitments**: Separates what *the client* promised (e.g. *"Sarah promised to upload brand photography to Google Drive by Monday"*) from what the freelancer must build.
+3. **Action Items & Deadline Classification**:
+   - Highlight task *"Send updated Figma mockups"* with green badge: **Confirmed Due: 2026-10-20 (Explicit)**.
+   - Highlight task *"Draft preliminary IA diagram"* with amber badge: **Tentative (Inferred: Late next week)**.
+   - Point out the verbatim quoted evidence from the transcript.
+4. **Open Client Questions**: Highlighting unresolved questions (e.g. *"Will we need multi-currency checkout for Canadian visitors in v1?"*).
+5. **Editable Follow-Up Email Draft**: Complete email pre-populated with client commitments and next steps, with a **"Open in Email Client"** `mailto:` button.
 
 **Narration**:
-> *"Instead of a giant wall of messy text, Alex gets immediate clarity.  
-> Here is the executive summary. Here are the exact action items with quoted evidence. Notice that ideas like 'dark mode toggle' are strictly separated from finalized decisions like 'ship beta next Wednesday'.  
-> And based directly on Alex's feedback, this one-click 'Copy Checklist' button formats everything into Markdown ready to paste into Slack or Linear."*
+> *"Look at how the intelligence is separated.  
+> In freelance consulting, confusing a client commitment with a developer task causes missed deliverables. Here, client deliverables like brand assets are strictly categorized under Client Commitments.  
+> Notice the deadline handling: Voice2Note enforces an anti-hallucination rule where it distinguishes confirmed explicit dates from tentative inferred timeframes. If a client casually says 'sometime late next week', Voice2Note never invents a confirmed deadline.  
+> It surfaces open client questions that need answers before coding begins.  
+> And down here: a complete follow-up email draft ready to review, edit, and send directly through my default email client."*
 
 ---
 
-### [1:50 – 2:20] Conversational RAG & Grounded Search
+### [2:05 – 2:35] The Freelancer Dashboard & One-Click Exports
 
-**Action**: Navigate to **"Ask My Notes"** (`/ask`). Click the suggested prompt pill:  
-*"What tasks did I mention recently?"*  
-Then type:  
-*"Where and when are we deploying the project?"*
-
-**Action**: Show the streaming answer synthesize with local Llama 3.2. Expand the **Source Citation** card showing the verbatim transcript quote, timestamp, and jump link.
+**Visual**: Navigate back to Dashboard (`/`). Show:
+- Factual Metrics: Active Clients, Incomplete Tasks, Upcoming Deadlines (with confirmed vs tentative breakdown), Open Client Questions, Total Audio Duration.
+- Inline task checkboxes toggling tasks complete without leaving the dashboard.
+- Click **"Export Tasks (CSV)"** and **"Export Summaries (MD)"**; show the files downloading instantly.
 
 **Narration**:
-> *"Now for the magic: conversational memory. When Alex asks, 'What tasks did I mention recently?' or 'Where and when are we deploying?', Voice2Note uses local vector search to retrieve only verified excerpts.  
-> It cites the exact note title and timestamp. And if you ask something not in your recordings—like a cookie recipe—it strictly refuses rather than hallucinating."*
+> *"Back on the dashboard, freelancers get an instant operational overview across all active clients.  
+> Notice that we show strictly factual metrics: real active clients, actual incomplete tasks, and upcoming deadlines. We never display fabricated 'hours saved' or fake 'accuracy percentages'.  
+> I can mark tasks complete directly with inline checkboxes.  
+> And with one click, I can export all pending client tasks to a formatted CSV spreadsheet for my billing tracker, or export full client call summaries as Markdown for my project archive."*
 
 ---
 
-### [2:20 – 2:40] Privacy Center & Model Transparency
+### [2:35 – 2:55] Grounded Search & Anti-Hallucination Refusal ("Ask My Notes")
 
-**Action**: Click **Privacy Center** (`/privacy`). Show the air-gap architecture diagram and Model Transparency table:
-- Speech: `whisper-tiny.en` (MIT)
-- LLM: `Llama 3.2 3B` (Meta Community)
-- Embeddings: `all-MiniLM-L6-v2` (Apache 2.0)
-- Storage: Local SQLite + Local Audio Directory
+**Visual**: Navigate to **"Ask My Notes"** (`/ask`).
+1. Ask factual query: *"Where are we deploying Project Apollo and when?"*
+   - Show grounded response citing Vercel on November 15, with expandable source transcript quote and note link.
+2. Ask adversarial out-of-domain query: *"What is the secret recipe for baking chocolate chip cookies?"*
+   - Show instant deterministic fallback refusal: *"I couldn't find enough information in your voice notes to answer that."*
 
 **Narration**:
-> *"Under the hood, we provide full technical transparency. No hidden proprietary API calls. All open-weight models with documented open licenses. You can turn off Wi-Fi entirely, and Voice2Note continues to record, extract, and search with 100% functionality."*
+> *"For cross-meeting memory, our Ask My Notes interface uses local vector retrieval.  
+> When I ask about a deployment decision, it retrieves the relevant excerpt with float32 cosine similarity and provides a verifiable citation linking to the exact source recording.  
+> But just as importantly: when asked something completely unmentioned—like a cookie recipe—it strictly refuses rather than hallucinating an answer. When managing client deliverables, knowing what was not said is just as critical as knowing what was said."*
 
 ---
 
-### [2:40 – 3:00] Friend Feedback & Closing
+### [2:55 – 3:15] Open Licenses, Local Setup & Conclusion
 
-**Action**: Switch to Notes Archive (`/notes`), showing the topic tag filter pills (`#Mobile`, `#Design`, `#Engineering`).
+**Visual**: Open the **Privacy Center** (`/privacy`), showing open model disclosures:
+- `Xenova/whisper-tiny.en` (MIT License)
+- `llama3.2:3b` (Meta Llama Community License)
+- `Xenova/all-MiniLM-L6-v2` (Apache 2.0)
+- Local SQLite database (Public Domain)
 
 **Narration**:
-> *"When Alex tested Voice2Note, they said:  
-> 'Before, my voice memos felt like chores I was accumulating. Now, as soon as I finish talking, my tasks are already extracted and waiting for me.'  
-> I built Voice2Note because my friend didn't need another chatbot.  
-> They needed a better memory for the things they already said. Thank you."*
+> *"Under the hood, Voice2Note is built entirely on open-weight models with transparent licenses: MIT Whisper, Apache 2.0 MiniLM, and Meta Llama Community Llama 3.2.  
+> Anyone can clone the repository, run `npm install`, pull `llama3.2`, and have a private, $0-marginal-cost client assistant running in minutes.  
+> Voice2Note proves that freelancers don't need to leak client data or pay expensive monthly cloud fees to work with precision. Thank you."*

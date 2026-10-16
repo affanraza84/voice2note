@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "eval": "vitest run tests/evaluation.test.ts",
     "postinstall": "node scripts/fix-transformers.js"
   },
   "dependencies": {

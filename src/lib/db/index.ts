@@ -338,7 +338,10 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
   const db = getDb();
   let query = `
     SELECT vn.*, t.raw_text as transcript_preview, e.summary as summary_preview,
-           e.tasks as tasks_json, e.topics as topics_json
+           e.call_summary as call_summary, e.tasks as tasks_json, e.topics as topics_json,
+           e.client_commitments as client_commitments_json, e.open_questions as open_questions_json,
+           e.follow_up_suggestions as follow_up_suggestions_json, e.important_dates as important_dates_json,
+           e.email_draft as email_draft_json, e.model_used as model_used
     FROM voice_notes vn
     LEFT JOIN transcripts t ON vn.id = t.voice_note_id
     LEFT JOIN extractions e ON vn.id = e.voice_note_id
@@ -357,16 +360,72 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
 
   return rows.map((row) => {
     let taskCount = 0;
+    let parsedTasks: TaskItem[] = [];
     try {
-      const parsedTasks = JSON.parse(row.tasks_json || '[]');
-      taskCount = Array.isArray(parsedTasks) ? parsedTasks.length : 0;
+      const p = JSON.parse(row.tasks_json || '[]');
+      parsedTasks = Array.isArray(p) ? p : [];
+      taskCount = parsedTasks.length;
     } catch {}
 
     let topicTags: string[] = [];
     try {
-      const parsedTopics = JSON.parse(row.topics_json || '[]');
-      topicTags = Array.isArray(parsedTopics) ? parsedTopics : [];
+      const p = JSON.parse(row.topics_json || '[]');
+      topicTags = Array.isArray(p) ? p : [];
     } catch {}
+
+    let parsedCommitments: any[] = [];
+    try {
+      const p = JSON.parse(row.client_commitments_json || '[]');
+      parsedCommitments = Array.isArray(p) ? p : [];
+    } catch {}
+
+    let parsedQuestions: any[] = [];
+    try {
+      const p = JSON.parse(row.open_questions_json || '[]');
+      parsedQuestions = Array.isArray(p) ? p : [];
+    } catch {}
+
+    let parsedSuggestions: any[] = [];
+    try {
+      const p = JSON.parse(row.follow_up_suggestions_json || '[]');
+      parsedSuggestions = Array.isArray(p) ? p : [];
+    } catch {}
+
+    let parsedDates: any[] = [];
+    try {
+      const p = JSON.parse(row.important_dates_json || '[]');
+      parsedDates = Array.isArray(p) ? p : [];
+    } catch {}
+
+    let parsedEmail: any = {};
+    try {
+      parsedEmail = JSON.parse(row.email_draft_json || '{}');
+    } catch {}
+
+    let extraction: Extraction | null = null;
+    if (row.summary_preview || row.tasks_json) {
+      extraction = {
+        id: row.id,
+        voiceNoteId: row.id,
+        title: row.title,
+        client: row.client || '',
+        project: row.project || '',
+        callSummary: row.call_summary || '',
+        summary: row.summary_preview || '',
+        tasks: parsedTasks,
+        clientCommitments: parsedCommitments,
+        ideas: [],
+        decisions: [],
+        openQuestions: parsedQuestions,
+        followUpSuggestions: parsedSuggestions,
+        people: [],
+        topics: topicTags,
+        importantDates: parsedDates,
+        emailDraft: parsedEmail,
+        modelUsed: row.model_used || '',
+        createdAt: row.created_at,
+      };
+    }
 
     return {
       id: row.id,
@@ -384,6 +443,7 @@ export function listVoiceNotes(limit = 50, offset = 0, statusFilter?: NoteStatus
       summaryPreview: row.summary_preview || (row.transcript_preview ? row.transcript_preview.slice(0, 160) + (row.transcript_preview.length > 160 ? '...' : '') : null),
       taskCount,
       topicTags,
+      extraction,
     };
   });
 }
@@ -782,6 +842,7 @@ export function getStats(): {
   processingCount: number;
   readyCount: number;
   failedCount: number;
+  clientCount: number;
 } {
   const db = getDb();
   const totalNotes = (db.prepare(`SELECT COUNT(*) as count FROM voice_notes`).get() as any)?.count || 0;
@@ -789,6 +850,12 @@ export function getStats(): {
   const processingCount = (db.prepare(`SELECT COUNT(*) as count FROM voice_notes WHERE status IN ('uploading', 'processing', 'transcribing', 'analyzing')`).get() as any)?.count || 0;
   const readyCount = (db.prepare(`SELECT COUNT(*) as count FROM voice_notes WHERE status = 'ready'`).get() as any)?.count || 0;
   const failedCount = (db.prepare(`SELECT COUNT(*) as count FROM voice_notes WHERE status = 'failed'`).get() as any)?.count || 0;
+  let clientCount = 0;
+  try {
+    clientCount = (db.prepare(`SELECT COUNT(DISTINCT client) as count FROM extractions WHERE client IS NOT NULL AND TRIM(client) != ''`).get() as any)?.count || 0;
+  } catch {
+    clientCount = 0;
+  }
 
   return {
     totalNotes,
@@ -796,6 +863,7 @@ export function getStats(): {
     processingCount,
     readyCount,
     failedCount,
+    clientCount,
   };
 }
 

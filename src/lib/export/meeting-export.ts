@@ -195,6 +195,81 @@ export function downloadFile(content: string, filename: string, mimeType: string
 }
 
 /**
+ * Multi-note task export item interface
+ */
+export interface TaskExportItem {
+  task: TaskItem;
+  noteTitle: string;
+  client?: string;
+  project?: string;
+  noteId?: string;
+}
+
+/**
+ * Generate CSV export for multiple tasks across notes
+ */
+export function generateAllTasksCSV(items: TaskExportItem[]): string {
+  const headers = [
+    'Task ID',
+    'Task Title',
+    'Completed',
+    'Priority',
+    'Due Date',
+    'Date Type',
+    'Evidence Quote',
+    'Source Note',
+    'Client',
+    'Project',
+  ];
+
+  const escapeCSV = (val: string | null | undefined): string => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const rows: string[] = [headers.map((h) => `"${h}"`).join(',')];
+
+  for (const { task, noteTitle, client, project } of items) {
+    const row = [
+      escapeCSV(task.id),
+      escapeCSV(task.title),
+      escapeCSV(task.completed ? 'YES' : 'NO'),
+      escapeCSV(task.priority),
+      escapeCSV(task.dueDate || ''),
+      escapeCSV(task.dueDateType || 'none'),
+      escapeCSV(task.evidence || ''),
+      escapeCSV(noteTitle),
+      escapeCSV(client || ''),
+      escapeCSV(project || ''),
+    ];
+    rows.push(row.join(','));
+  }
+
+  return rows.join('\r\n');
+}
+
+/**
+ * Generate a combined Markdown export for all client calls
+ */
+export function generateAllMeetingsMarkdown(notes: VoiceNote[]): string {
+  if (notes.length === 0) {
+    return '# Freelance Client Calls Summary\n\nNo client call notes available to export.';
+  }
+
+  const parts = notes.map((note) => generateMeetingMarkdown(note));
+  return [
+    '# Freelance Client Calls Summary',
+    `**Generated:** ${new Date().toLocaleString('en-US')}`,
+    `**Total Calls Included:** ${notes.length}`,
+    '',
+    '---',
+    '',
+    parts.join('\n\n---\n\n'),
+  ].join('\n');
+}
+
+/**
  * Generate mailto URL for external user-controlled sending.
  */
 export function generateMailtoUrl(emailDraft: EmailDraft): string {
